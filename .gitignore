@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+mediafiles/
+staticfiles/
+
+# Environment files — NEVER commit real env files
+.env
+.env.local
+.env.*.local
+
+# Migrations — keep __init__.py, ignore generated files if needed
+# Uncomment the line below only if migrations are generated fresh per deploy
+# apps/**/migrations/*.py
+# !apps/**/migrations/__init__.py
+
+# Coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db

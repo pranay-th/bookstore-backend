@@ -1,0 +1,27 @@
+# Web framework
+Django==4.2.13
+djangorestframework==3.15.2
+
+# Database
+psycopg2-binary==2.9.9
+dj-database-url==2.1.0
+
+# Environment
+python-decouple==3.8
+
+# CORS
+django-cors-headers==4.3.1
+
+# Static files
+whitenoise==6.7.0
+
+# Gunicorn (production WSGI server)
+gunicorn==22.0.0
+
+# Utilities
+pillow==10.3.0
+django-filter==24.2
+
+# TODO: Add celery + redis for background tasks
+# TODO: Add drf-spectacular for OpenAPI schema generation
+# TODO: Add sentry-sdk for error tracking
