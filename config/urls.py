@@ -13,23 +13,18 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('user/', include('apps.users.urls')),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
-
     path(
         "api/docs/",
         SpectacularSwaggerView.as_view(url_name="schema"),
         name="swagger-ui",
     ),
-
     path(
         "api/redoc/",
         SpectacularRedocView.as_view(url_name="schema"),
         name="redoc",
     ),
-]
 
-    # App API routes
     # TODO: Uncomment routes as each app is implemented
-    # path('api/users/',         include('apps.users.urls')),
     # path('api/authors/',       include('apps.authors.urls')),
     # path('api/categories/',    include('apps.categories.urls')),
     # path('api/books/',         include('apps.books.urls')),
@@ -42,4 +37,4 @@ urlpatterns = [
     # path('api/reviews/',       include('apps.reviews.urls')),
     # path('api/notifications/', include('apps.notifications.urls')),
     # path('api/analytics/',     include('apps.analytics.urls')),
-
+]
