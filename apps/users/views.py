@@ -1,40 +1,87 @@
-"""
-users/views.py — Phase 0 placeholders.
-NO authentication / login / register endpoints.
-TODO: Implement UserViewSet, UserProfileViewSet, UserAddressViewSet.
-"""
-from rest_framework import viewsets, status
+from rest_framework import status
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from .models import User, UserProfile, UserAddress
-from .serializers import UserSerializer, UserProfileSerializer, UserAddressSerializer
+from rest_framework.views import APIView
+
+from drf_spectacular.utils import (
+    extend_schema,
+    OpenApiExample,
+)
+
+from .serializers import (
+    SignupSerializer,
+    SignupResponseSerializer,
+)
 
 
-class UserViewSet(viewsets.ModelViewSet):
-    """
-    CRUD for Users.
-    TODO: Add permission classes once auth is implemented.
-    TODO: Filter queryset to request.user for non-admin requests.
-    """
-    queryset         = User.objects.all()
-    serializer_class = UserSerializer
+class SignupView(APIView):
 
-    # TODO: def get_queryset(self): restrict to authenticated user or admin
+    permission_classes = [AllowAny]
 
+    @extend_schema(
+        tags=["Authentication"],
+        summary="Register a new user",
+        description="""
+        Create a new account.
 
-class UserProfileViewSet(viewsets.ModelViewSet):
-    """
-    CRUD for UserProfiles.
-    TODO: Enforce one-to-one constraint in create.
-    """
-    queryset         = UserProfile.objects.select_related('user')
-    serializer_class = UserProfileSerializer
+        Allowed roles:
+        - CUSTOMER
+        - AUTHOR
 
+        ADMIN registration is not allowed.
+        """,
+        request=SignupSerializer,
+        responses={
+            201: SignupResponseSerializer,
+        },
+        examples=[
+            OpenApiExample(
+                "Customer Signup",
+                value={
+                    "email": "customer@gmail.com",
+                    "password": "Customer@123",
+                    "first_name": "John",
+                    "last_name": "Doe",
+                    "phone": "+919876543210",
+                    "role": "CUSTOMER",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Author Signup",
+                value={
+                    "email": "author@gmail.com",
+                    "password": "Author@123",
+                    "first_name": "Jane",
+                    "last_name": "Smith",
+                    "phone": "+919876543210",
+                    "role": "AUTHOR",
+                },
+                request_only=True,
+            ),
+        ],
+    )
+    def post(self, request):
 
-class UserAddressViewSet(viewsets.ModelViewSet):
-    """
-    CRUD for UserAddresses.
-    TODO: Restrict to addresses belonging to the authenticated user.
-    TODO: Enforce only one default address per type per user.
-    """
-    queryset         = UserAddress.objects.select_related('user')
-    serializer_class = UserAddressSerializer
+        serializer = SignupSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        user = serializer.save()
+
+        return Response(
+            {
+                "message": "Registration successful",
+                "user": {
+                    "id": str(user.id),
+                    "email": user.email,
+                    "role": user.role,
+                    "full_name": user.full_name,
+                }
+            },
+            status=status.HTTP_201_CREATED
+        )

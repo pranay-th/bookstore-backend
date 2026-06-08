@@ -21,7 +21,7 @@ gunicorn==23.0.0
 # Utilities
 pillow==11.1.0
 django-filter==24.3
+drf-spectacular==0.29.0
 
 # TODO: Add celery + redis for background tasks
-# TODO: Add drf-spectacular for OpenAPI schema generation
 # TODO: Add sentry-sdk for error tracking
