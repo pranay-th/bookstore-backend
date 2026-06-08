@@ -26,7 +26,7 @@ class UserAdmin(BaseUserAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display  = ('user', 'preferred_language', 'preferred_currency', 'newsletter_opt_in')
+    list_display  = ('user', 'preferred_language', 'newsletter_opt_in')
     search_fields = ('user__email',)
 
 
