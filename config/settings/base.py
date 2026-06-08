@@ -96,17 +96,28 @@ WSGI_APPLICATION = 'config.wsgi.application'
 ASGI_APPLICATION = 'config.asgi.application'
 
 # ---------------------------------------------------------------------------
-# Database — overridden per environment
+# Database — Neon PostgreSQL (pooled, SSL required)
 # ---------------------------------------------------------------------------
 import dj_database_url
 
-DATABASES = {
-    'default': dj_database_url.config(
-        env='DATABASE_URL',
-        default='sqlite:///db.sqlite3',
-        conn_max_age=600,
-    )
-}
+_db_config = dj_database_url.config(
+    env='DATABASE_URL',
+    default='sqlite:///db.sqlite3',
+    conn_max_age=600,
+    ssl_require=True,
+)
+
+# Neon requires sslmode=require and channel_binding=require.
+# dj-database-url parses these from the query string automatically,
+# but we enforce the SSL options here as a safety net.
+if _db_config.get('ENGINE') == 'django.db.backends.postgresql':
+    _db_config.setdefault('OPTIONS', {})
+    _db_config['OPTIONS'].update({
+        'sslmode': 'require',
+        'channel_binding': 'require',
+    })
+
+DATABASES = {'default': _db_config}
 
 # ---------------------------------------------------------------------------
 # Auth
