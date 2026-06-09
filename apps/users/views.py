@@ -1,6 +1,5 @@
 from rest_framework import status
 from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
 from rest_framework.views import APIView
 from .serializers import (
     SignupSerializer,
@@ -13,6 +12,7 @@ from drf_spectacular.utils import (
     OpenApiExample,
     OpenApiResponse,
 )
+from apps.core.responses import success_response, error_response
 
 
 class SignupView(APIView):
@@ -33,7 +33,41 @@ class SignupView(APIView):
         """,
         request=SignupSerializer,
         responses={
-            201: SignupResponseSerializer,
+            201: OpenApiResponse(
+                description="Registration successful",
+                examples=[
+                    OpenApiExample(
+                        "Success Response",
+                        value={
+                            "status": "success",
+                            "details": "Registration successful.",
+                            "data": {
+                                "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                                "email": "customer@gmail.com",
+                                "role": "CUSTOMER",
+                                "full_name": "John Doe",
+                            },
+                            "status_code": 201,
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+            400: OpenApiResponse(
+                description="Validation error",
+                examples=[
+                    OpenApiExample(
+                        "Email Already Exists",
+                        value={
+                            "status": "failed",
+                            "details": "email: Email already exists.",
+                            "data": {},
+                            "status_code": 400,
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
         },
         examples=[
             OpenApiExample(
@@ -74,17 +108,15 @@ class SignupView(APIView):
 
         user = serializer.save()
 
-        return Response(
-            {
-                "message": "Registration successful",
-                "user": {
-                    "id": str(user.id),
-                    "email": user.email,
-                    "role": user.role,
-                    "full_name": user.full_name,
-                }
+        return success_response(
+            data={
+                "id": str(user.id),
+                "email": user.email,
+                "role": user.role,
+                "full_name": user.full_name,
             },
-            status=status.HTTP_201_CREATED
+            message="Registration successful.",
+            status_code=201,
         )
 
 
@@ -112,13 +144,15 @@ class LoginView(APIView):
                     OpenApiExample(
                         "Success Response",
                         value={
-                            "message": "Login successful",
-                            "user": {
+                            "status": "success",
+                            "details": "Login successful.",
+                            "data": {
                                 "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                                 "email": "customer@gmail.com",
                                 "role": "CUSTOMER",
                                 "full_name": "John Doe",
-                            }
+                            },
+                            "status_code": 200,
                         },
                         response_only=True,
                     ),
@@ -130,7 +164,10 @@ class LoginView(APIView):
                     OpenApiExample(
                         "Invalid Credentials",
                         value={
-                            "non_field_errors": ["Invalid email or password."]
+                            "status": "failed",
+                            "details": "Invalid email or password.",
+                            "data": None,
+                            "status_code": 400,
                         },
                         response_only=True,
                     ),
@@ -176,15 +213,13 @@ class LoginView(APIView):
 
         user = serializer.validated_data["user"]
 
-        return Response(
-            {
-                "message": "Login successful",
-                "user": {
-                    "id": str(user.id),
-                    "email": user.email,
-                    "role": user.role,
-                    "full_name": user.full_name,
-                }
+        return success_response(
+            data={
+                "id": str(user.id),
+                "email": user.email,
+                "role": user.role,
+                "full_name": user.full_name,
             },
-            status=status.HTTP_200_OK
+            message="Login successful.",
+            status_code=200,
         )

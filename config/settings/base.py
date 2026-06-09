@@ -166,6 +166,7 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
+    'EXCEPTION_HANDLER': 'apps.core.exceptions.custom_exception_handler',
     # TODO: Add DEFAULT_AUTHENTICATION_CLASSES when auth is implemented
     # TODO: Add DEFAULT_PERMISSION_CLASSES when auth is implemented
 }
