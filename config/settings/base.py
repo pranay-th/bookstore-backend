@@ -35,6 +35,7 @@ THIRD_PARTY_APPS = [
     'rest_framework',
     'corsheaders',
     'django_filters',
+    'drf_spectacular',
 ]
 
 LOCAL_APPS = [
@@ -97,27 +98,32 @@ ASGI_APPLICATION = 'config.asgi.application'
 
 # ---------------------------------------------------------------------------
 # Database — Neon PostgreSQL (pooled, SSL required)
+# DATABASE_URL must be set in the environment. No SQLite fallback.
 # ---------------------------------------------------------------------------
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 
-_db_config = dj_database_url.config(
-    env='DATABASE_URL',
-    default='sqlite:///db.sqlite3',
-    conn_max_age=600,
-    ssl_require=True,
-)
+_database_url = config('DATABASE_URL', default='')
+if not _database_url:
+    raise ImproperlyConfigured(
+        'DATABASE_URL environment variable is not set. '
+        'This project requires PostgreSQL — set DATABASE_URL to your Neon connection string.'
+    )
 
-# Neon requires sslmode=require and channel_binding=require.
-# dj-database-url parses these from the query string automatically,
-# but we enforce the SSL options here as a safety net.
-if _db_config.get('ENGINE') == 'django.db.backends.postgresql':
-    _db_config.setdefault('OPTIONS', {})
-    _db_config['OPTIONS'].update({
-        'sslmode': 'require',
-        'channel_binding': 'require',
-    })
+DATABASES = {
+    'default': dj_database_url.parse(
+        _database_url,
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+}
 
-DATABASES = {'default': _db_config}
+# Neon requires SSL and channel_binding on every connection.
+DATABASES['default'].setdefault('OPTIONS', {})
+DATABASES['default']['OPTIONS'].update({
+    'sslmode': 'require',
+    'channel_binding': 'require',
+})
 
 # ---------------------------------------------------------------------------
 # Auth
@@ -152,6 +158,7 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # DRF
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_FILTER_BACKENDS': [
@@ -159,6 +166,7 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
+    'EXCEPTION_HANDLER': 'apps.core.exceptions.custom_exception_handler',
     # TODO: Add DEFAULT_AUTHENTICATION_CLASSES when auth is implemented
     # TODO: Add DEFAULT_PERMISSION_CLASSES when auth is implemented
 }
