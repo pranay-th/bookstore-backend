@@ -16,9 +16,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# collectstatic is intentionally NOT run here.
-# DATABASE_URL is not available at build time — it is injected by Render at runtime.
-# collectstatic runs as part of the Render buildCommand in render.yaml instead.
+# Run collectstatic at build time using a dummy SECRET_KEY and a stub DATABASE_URL.
+# collectstatic does not need a real DB or real secrets — it only needs Django to load.
+# The real DATABASE_URL and SECRET_KEY are injected by Render at runtime.
+RUN SECRET_KEY=build-time-placeholder \
+    DATABASE_URL=postgresql://placeholder:placeholder@placeholder:5432/placeholder \
+    DJANGO_SETTINGS_MODULE=config.settings.production \
+    python manage.py collectstatic --no-input
 
 EXPOSE 8000
 
