@@ -16,8 +16,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN python manage.py collectstatic --no-input \
-    --settings=config.settings.production
+# collectstatic is intentionally NOT run here.
+# DATABASE_URL is not available at build time — it is injected by Render at runtime.
+# collectstatic runs as part of the Render buildCommand in render.yaml instead.
 
 EXPOSE 8000
 
