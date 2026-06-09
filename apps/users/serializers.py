@@ -51,6 +51,9 @@ class SignupSerializer(serializers.ModelSerializer):
 
 
 class SignupResponseSerializer(serializers.ModelSerializer):
+    """Shape of the `data` field returned after a successful signup."""
+
+    full_name = serializers.ReadOnlyField()
 
     class Meta:
         model = User
@@ -58,9 +61,7 @@ class SignupResponseSerializer(serializers.ModelSerializer):
             "id",
             "email",
             "role",
-            "first_name",
-            "last_name",
-            "phone",
+            "full_name",
         ]
 from django.contrib.auth import authenticate
 from rest_framework import serializers

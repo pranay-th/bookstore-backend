@@ -1,18 +1,9 @@
-from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
-from .serializers import (
-    SignupSerializer,
-    SignupResponseSerializer,
-    LoginSerializer,
-    LoginResponseSerializer,
-)
-from drf_spectacular.utils import (
-    extend_schema,
-    OpenApiExample,
-    OpenApiResponse,
-)
-from apps.core.responses import success_response, error_response
+from .serializers import SignupSerializer, LoginSerializer
+from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
+from apps.core.responses import success_response
+from apps.core.serializers import SuccessResponseSerializer, ErrorResponseSerializer
 
 
 class SignupView(APIView):
@@ -20,7 +11,6 @@ class SignupView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
-        tags=["Authentication"],
         summary="Register a new user",
         description="""
         Create a new account.
@@ -34,35 +24,60 @@ class SignupView(APIView):
         request=SignupSerializer,
         responses={
             201: OpenApiResponse(
+                response=SuccessResponseSerializer,
                 description="Registration successful",
                 examples=[
                     OpenApiExample(
                         "Success Response",
                         value={
-                            "status": "success",
-                            "details": "Registration successful.",
+                            "status": {
+                                "success": True,
+                                "code": 201,
+                                "message": "Registration successful.",
+                            },
                             "data": {
                                 "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                                 "email": "customer@gmail.com",
                                 "role": "CUSTOMER",
                                 "full_name": "John Doe",
                             },
-                            "status_code": 201,
                         },
                         response_only=True,
                     ),
                 ],
             ),
             400: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="Validation error",
                 examples=[
                     OpenApiExample(
                         "Email Already Exists",
                         value={
-                            "status": "failed",
-                            "details": "email: Email already exists.",
-                            "data": {},
-                            "status_code": 400,
+                            "status": {
+                                "success": False,
+                                "code": 400,
+                                "message": "Validation failed.",
+                            },
+                            "data": None,
+                            "errors": {
+                                "email": ["Email already exists."],
+                            },
+                        },
+                        response_only=True,
+                    ),
+                    OpenApiExample(
+                        "Missing Required Fields",
+                        value={
+                            "status": {
+                                "success": False,
+                                "code": 400,
+                                "message": "Validation failed.",
+                            },
+                            "data": None,
+                            "errors": {
+                                "email": ["This field is required."],
+                                "password": ["This field is required."],
+                            },
                         },
                         response_only=True,
                     ),
@@ -98,14 +113,8 @@ class SignupView(APIView):
     )
     def post(self, request):
 
-        serializer = SignupSerializer(
-            data=request.data
-        )
-
-        serializer.is_valid(
-            raise_exception=True
-        )
-
+        serializer = SignupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
         return success_response(
@@ -125,7 +134,6 @@ class LoginView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
-        tags=["Authentication"],
         summary="Login user",
         description="""
         Authenticate with email and password.
@@ -138,36 +146,75 @@ class LoginView(APIView):
         request=LoginSerializer,
         responses={
             200: OpenApiResponse(
-                response=LoginResponseSerializer,
+                response=SuccessResponseSerializer,
                 description="Login successful",
                 examples=[
                     OpenApiExample(
                         "Success Response",
                         value={
-                            "status": "success",
-                            "details": "Login successful.",
+                            "status": {
+                                "success": True,
+                                "code": 200,
+                                "message": "Login successful.",
+                            },
                             "data": {
                                 "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                                 "email": "customer@gmail.com",
                                 "role": "CUSTOMER",
                                 "full_name": "John Doe",
                             },
-                            "status_code": 200,
                         },
                         response_only=True,
                     ),
                 ],
             ),
             400: OpenApiResponse(
+                response=ErrorResponseSerializer,
                 description="Invalid credentials or validation error",
                 examples=[
                     OpenApiExample(
                         "Invalid Credentials",
                         value={
-                            "status": "failed",
-                            "details": "Invalid email or password.",
+                            "status": {
+                                "success": False,
+                                "code": 400,
+                                "message": "Invalid email or password.",
+                            },
                             "data": None,
-                            "status_code": 400,
+                        },
+                        response_only=True,
+                    ),
+                    OpenApiExample(
+                        "Missing Fields",
+                        value={
+                            "status": {
+                                "success": False,
+                                "code": 400,
+                                "message": "Validation failed.",
+                            },
+                            "data": None,
+                            "errors": {
+                                "email": ["This field is required."],
+                                "password": ["This field is required."],
+                            },
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Account disabled",
+                examples=[
+                    OpenApiExample(
+                        "Account Disabled",
+                        value={
+                            "status": {
+                                "success": False,
+                                "code": 401,
+                                "message": "Account is disabled.",
+                            },
+                            "data": None,
                         },
                         response_only=True,
                     ),
@@ -179,7 +226,7 @@ class LoginView(APIView):
                 "Customer Login",
                 value={
                     "email": "customer@gmail.com",
-                    "password": "Customer@123"
+                    "password": "Customer@123",
                 },
                 request_only=True,
             ),
@@ -187,7 +234,7 @@ class LoginView(APIView):
                 "Author Login",
                 value={
                     "email": "author@gmail.com",
-                    "password": "Author@123"
+                    "password": "Author@123",
                 },
                 request_only=True,
             ),
@@ -195,7 +242,7 @@ class LoginView(APIView):
                 "Admin Login",
                 value={
                     "email": "admin@gmail.com",
-                    "password": "Admin@123"
+                    "password": "Admin@123",
                 },
                 request_only=True,
             ),
@@ -203,14 +250,8 @@ class LoginView(APIView):
     )
     def post(self, request):
 
-        serializer = LoginSerializer(
-            data=request.data
-        )
-
-        serializer.is_valid(
-            raise_exception=True
-        )
-
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
 
         return success_response(
