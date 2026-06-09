@@ -126,6 +126,11 @@ class User(AbstractBaseUser, PermissionsMixin):
         default=False
     )
 
+    is_email_verified = models.BooleanField(
+        default=False,
+        help_text="Set to True after the user clicks the verification link."
+    )
+
     deleted_at = models.DateTimeField(
         null=True,
         blank=True

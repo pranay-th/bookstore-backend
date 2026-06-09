@@ -1,5 +1,5 @@
 """
-Development settings — verbose errors, SQLite fallback, no security hardening.
+Development settings — verbose errors, no security hardening.
 """
 from .base import *  # noqa: F401, F403
 
@@ -23,8 +23,7 @@ SPECTACULAR_SETTINGS = {
     ],
 }
 
-# TODO: Add django-debug-toolbar for development profiling
-# INSTALLED_APPS += ['debug_toolbar']
-
-# Email — print to console in development
+# ---------------------------------------------------------------------------
+# Email — print to console in development instead of sending via SendGrid
+# ---------------------------------------------------------------------------
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

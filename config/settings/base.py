@@ -36,6 +36,7 @@ THIRD_PARTY_APPS = [
     'corsheaders',
     'django_filters',
     'drf_spectacular',
+    'anymail',
 ]
 
 LOCAL_APPS = [
@@ -167,9 +168,60 @@ REST_FRAMEWORK = {
         'rest_framework.filters.OrderingFilter',
     ],
     'EXCEPTION_HANDLER': 'apps.core.exceptions.custom_exception_handler',
-    # TODO: Add DEFAULT_AUTHENTICATION_CLASSES when auth is implemented
-    # TODO: Add DEFAULT_PERMISSION_CLASSES when auth is implemented
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
 }
+
+# ---------------------------------------------------------------------------
+# JWT — djangorestframework-simplejwt
+# ---------------------------------------------------------------------------
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME':  timedelta(minutes=config('JWT_ACCESS_TOKEN_LIFETIME_MINUTES', default=60,  cast=int)),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=config('JWT_REFRESH_TOKEN_LIFETIME_DAYS',    default=7,   cast=int)),
+    'ROTATE_REFRESH_TOKENS':  True,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': config('SECRET_KEY', default='change-me'),
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+}
+
+# ---------------------------------------------------------------------------
+# Redis — OTP storage
+# ---------------------------------------------------------------------------
+REDIS_URL = config('REDIS_URL', default='redis://localhost:6379')
+
+# ---------------------------------------------------------------------------
+# OTP settings
+# ---------------------------------------------------------------------------
+OTP_LENGTH          = config('OTP_LENGTH',          default=6,  cast=int)
+OTP_EXPIRY_MINUTES  = config('OTP_EXPIRY_MINUTES',  default=10, cast=int)
+
+# ---------------------------------------------------------------------------
+# Email verification settings
+# ---------------------------------------------------------------------------
+EMAIL_VERIFICATION_EXPIRY_MINUTES = config('EMAIL_VERIFICATION_EXPIRY_MINUTES', default=1440, cast=int)
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
+
+# ---------------------------------------------------------------------------
+# Cron secret — used to authenticate requests from crojob.org
+# ---------------------------------------------------------------------------
+CRON_SECRET_KEY = config('CRON_SECRET_KEY', default='')
+
+# ---------------------------------------------------------------------------
+# SendGrid via django-anymail
+# ---------------------------------------------------------------------------
+ANYMAIL = {
+    'SENDGRID_API_KEY': config('SENDGRID_API_KEY', default=''),
+}
+DEFAULT_FROM_EMAIL  = config('DEFAULT_FROM_EMAIL', default='noreply@example.com')
 
 # ---------------------------------------------------------------------------
 # CORS
