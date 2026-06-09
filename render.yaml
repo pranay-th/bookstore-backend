@@ -2,15 +2,17 @@ services:
   - type: web
     name: bookstore-backend
     env: python
-    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --no-input && python manage.py migrate"
+    # collectstatic runs here where DATABASE_URL is available.
+    # Migrations are handled by the GitHub Actions deploy workflow, not here.
+    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --no-input"
     startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
     envVars:
       - key: DJANGO_SETTINGS_MODULE
         value: config.settings.production
       - key: SECRET_KEY
-        sync: false          # Set in Render dashboard
+        sync: false
       - key: DATABASE_URL
-        sync: false          # Set in Render dashboard (AWS RDS)
+        sync: false
       - key: DEBUG
         value: "False"
       - key: ALLOWED_HOSTS

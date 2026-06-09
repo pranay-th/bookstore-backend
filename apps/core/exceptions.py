@@ -4,19 +4,23 @@ apps/core/exceptions.py
 Global DRF exception handler.
 
 Catches ALL exceptions — validation errors, auth errors, 404s, 500s, etc. —
-and wraps them in the standard envelope:
+and wraps them in the standard envelope.
 
+Success envelope:
     {
-        "status":      "failed",
-        "details":     <message or list of messages>,
-        "data":        {},
-        "status_code": <http status code>
+        "status": { "success": true,  "code": 200, "message": "..." },
+        "data":   { ... }
+    }
+
+Error envelope:
+    {
+        "status": { "success": false, "code": 400, "message": "..." },
+        "data":   null,
+        "errors": { "field": ["msg", ...] } | null
     }
 """
 
 from rest_framework.views import exception_handler
-from rest_framework.exceptions import ValidationError
-from rest_framework import status
 
 
 def custom_exception_handler(exc, context):
@@ -24,38 +28,38 @@ def custom_exception_handler(exc, context):
     response = exception_handler(exc, context)
 
     if response is None:
-        # Unhandled server error — return 500
         return None
 
     http_code = response.status_code
     data = response.data
+    message = None
+    errors = None
 
-    # --- Flatten the error message into a clean string or list ---
     if isinstance(data, dict):
-        # ValidationError with field errors e.g. {"email": ["already exists"]}
-        # or non-field errors e.g. {"non_field_errors": ["Invalid credentials"]}
         if "detail" in data:
             # AuthenticationFailed, PermissionDenied, NotFound, etc.
-            details = str(data["detail"])
-        elif "non_field_errors" in data:
-            errors = data["non_field_errors"]
-            details = errors[0] if len(errors) == 1 else list(errors)
-        else:
-            # Field-level validation errors — collect all messages
-            messages = []
-            for field, errors in data.items():
-                if isinstance(errors, list):
-                    for err in errors:
-                        messages.append(f"{field}: {err}")
-                else:
-                    messages.append(f"{field}: {errors}")
-            details = messages[0] if len(messages) == 1 else messages
-    elif isinstance(data, list):
-        details = data[0] if len(data) == 1 else data
-    else:
-        details = str(data)
+            message = str(data["detail"])
 
-    # --- Map common HTTP codes to friendly messages when details is generic ---
+        elif "non_field_errors" in data:
+            # Non-field ValidationError (e.g. invalid credentials)
+            non_field = data["non_field_errors"]
+            message = non_field[0] if len(non_field) == 1 else " ".join(str(e) for e in non_field)
+
+        else:
+            # Field-level ValidationError — preserve as errors dict
+            message = "Validation failed."
+            errors = {
+                field: [str(e) for e in errs] if isinstance(errs, list) else [str(errs)]
+                for field, errs in data.items()
+            }
+
+    elif isinstance(data, list):
+        message = data[0] if len(data) == 1 else " ".join(str(e) for e in data)
+
+    else:
+        message = str(data)
+
+    # Fallback for empty/generic messages
     fallback_messages = {
         400: "Bad request.",
         401: "Authentication required.",
@@ -66,14 +70,17 @@ def custom_exception_handler(exc, context):
         500: "An unexpected error occurred. Please try again later.",
     }
 
-    if not details or details in ("", "null", "None"):
-        details = fallback_messages.get(http_code, "An error occurred.")
+    if not message or message in ("", "null", "None"):
+        message = fallback_messages.get(http_code, "An error occurred.")
 
     response.data = {
-        "status":      "failed",
-        "details":     details,
-        "data":        {},
-        "status_code": http_code,
+        "status": {
+            "success": False,
+            "code":    http_code,
+            "message": message,
+        },
+        "data":   None,
+        "errors": errors,
     }
 
     return response
