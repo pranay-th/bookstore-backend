@@ -4,19 +4,11 @@ apps/core/exceptions.py
 Global DRF exception handler.
 
 Catches ALL exceptions — validation errors, auth errors, 404s, 500s, etc. —
-and wraps them in the standard envelope.
+and wraps them in the standard envelope:
 
-Success envelope:
     {
-        "status": { "success": true,  "code": 200, "message": "..." },
-        "data":   { ... }
-    }
-
-Error envelope:
-    {
-        "status": { "success": false, "code": 400, "message": "..." },
-        "data":   null,
-        "errors": { "field": ["msg", ...] } | null
+        "status": { "success": false, "code": <int>, "message": "<str>" },
+        "data":   null
     }
 """
 
@@ -33,7 +25,6 @@ def custom_exception_handler(exc, context):
     http_code = response.status_code
     data = response.data
     message = None
-    errors = None
 
     if isinstance(data, dict):
         if "detail" in data:
@@ -46,12 +37,15 @@ def custom_exception_handler(exc, context):
             message = non_field[0] if len(non_field) == 1 else " ".join(str(e) for e in non_field)
 
         else:
-            # Field-level ValidationError — preserve as errors dict
-            message = "Validation failed."
-            errors = {
-                field: [str(e) for e in errs] if isinstance(errs, list) else [str(errs)]
-                for field, errs in data.items()
-            }
+            # Field-level ValidationError — flatten all messages into one string
+            messages = []
+            for field, errs in data.items():
+                if isinstance(errs, list):
+                    for err in errs:
+                        messages.append(f"{field}: {err}")
+                else:
+                    messages.append(f"{field}: {errs}")
+            message = messages[0] if len(messages) == 1 else " | ".join(messages)
 
     elif isinstance(data, list):
         message = data[0] if len(data) == 1 else " ".join(str(e) for e in data)
@@ -79,8 +73,7 @@ def custom_exception_handler(exc, context):
             "code":    http_code,
             "message": message,
         },
-        "data":   None,
-        "errors": errors,
+        "data": None,
     }
 
     return response
