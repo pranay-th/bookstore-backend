@@ -236,3 +236,12 @@ CORS_ALLOWED_ORIGINS = config(
 # Default primary key
 # ---------------------------------------------------------------------------
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ---------------------------------------------------------------------------
+# Logging — loguru
+# Intercepts Django's stdlib logging and routes it through loguru.
+# ---------------------------------------------------------------------------
+from apps.core.logging import setup_loguru  # noqa: E402
+
+LOG_LEVEL = config('LOG_LEVEL', default='DEBUG')
+setup_loguru(log_level=LOG_LEVEL, base_dir=BASE_DIR)

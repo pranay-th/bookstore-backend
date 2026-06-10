@@ -3,20 +3,20 @@ apps/users/views.py
 
 Authentication endpoints:
 
-  POST /user/signup/            Register a new user (sends verification email)
-  POST /user/verify-email/      Verify email from link (uid + token)
-  POST /user/login/             Credentials → OTP sent to email
-  POST /user/verify-otp/        OTP → JWT access + refresh tokens
-  POST /user/token/refresh/     Refresh JWT access token
+  POST /user/signup/              Register a new user (sends verification email)
+  POST /user/verify-email/        Verify email from link (uid + token)
+  POST /user/login/               Credentials → OTP sent to email
+  POST /user/verify-otp/          OTP → JWT access + refresh tokens
+  POST /user/token/refresh/       Refresh JWT access token
   POST /user/resend-verification/ Resend verification email
 
-  POST /user/cron/send-reminders/  Cron-triggered reminder emails (protected by secret)
+  POST /user/cron/send-reminders/ Cron-triggered reminder emails (protected by secret)
 """
 
-import logging
+from loguru import logger
 
 from django.conf import settings
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
@@ -30,18 +30,13 @@ from apps.core.serializers import SuccessResponseSerializer, ErrorResponseSerial
 
 from .serializers import (
     SignupSerializer,
-    SignupResponseSerializer,
     VerifyEmailSerializer,
     LoginSerializer,
-    LoginResponseSerializer,
     VerifyOTPSerializer,
     RefreshTokenSerializer,
 )
 from .emails import send_verification_email, send_reminder_email
-from .tokens import make_verification_link
 from .models import User
-
-logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -59,8 +54,34 @@ class SignupView(APIView):
         ),
         request=SignupSerializer,
         responses={
-            201: OpenApiResponse(response=SuccessResponseSerializer, description="Registration successful"),
-            400: OpenApiResponse(response=ErrorResponseSerializer,   description="Validation error"),
+            201: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Registration successful",
+                examples=[
+                    OpenApiExample(
+                        "Success",
+                        value={
+                            "status": {"success": True, "code": 201, "message": "Registration successful. Please check your email to verify your account."},
+                            "data": {"id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "email": "customer@example.com", "role": "CUSTOMER", "full_name": "John Doe"},
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Validation error",
+                examples=[
+                    OpenApiExample(
+                        "Email Already Exists",
+                        value={
+                            "status": {"success": False, "code": 400, "message": "email: Email already exists."},
+                            "data": None,
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
         },
         examples=[
             OpenApiExample(
@@ -68,6 +89,13 @@ class SignupView(APIView):
                 value={"email": "customer@example.com", "password": "Secret@123",
                        "first_name": "John", "last_name": "Doe",
                        "phone": "+919876543210", "role": "CUSTOMER"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Author Signup",
+                value={"email": "author@example.com", "password": "Secret@123",
+                       "first_name": "Jane", "last_name": "Smith",
+                       "phone": "+919876543210", "role": "AUTHOR"},
                 request_only=True,
             ),
         ],
@@ -96,8 +124,34 @@ class ResendVerificationView(APIView):
         summary="Resend email verification link",
         request=None,
         responses={
-            200: OpenApiResponse(response=SuccessResponseSerializer, description="Email sent"),
-            400: OpenApiResponse(response=ErrorResponseSerializer,   description="Already verified or not found"),
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Email sent",
+                examples=[
+                    OpenApiExample(
+                        "Success",
+                        value={
+                            "status": {"success": True, "code": 200, "message": "Verification email sent. Please check your inbox."},
+                            "data": None,
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Already verified or not found",
+                examples=[
+                    OpenApiExample(
+                        "Already Verified",
+                        value={
+                            "status": {"success": False, "code": 400, "message": "Email is already verified."},
+                            "data": None,
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
         },
         examples=[
             OpenApiExample(
@@ -115,7 +169,6 @@ class ResendVerificationView(APIView):
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
-            # Return success anyway to avoid email enumeration
             return success_response(
                 message="If that email exists, a verification link has been sent."
             )
@@ -145,8 +198,34 @@ class VerifyEmailView(APIView):
         description="Validate the uid + token from the verification link.",
         request=VerifyEmailSerializer,
         responses={
-            200: OpenApiResponse(response=SuccessResponseSerializer, description="Email verified"),
-            400: OpenApiResponse(response=ErrorResponseSerializer,   description="Invalid or expired link"),
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Email verified",
+                examples=[
+                    OpenApiExample(
+                        "Success",
+                        value={
+                            "status": {"success": True, "code": 200, "message": "Email verified successfully. You can now log in."},
+                            "data": {"email": "customer@example.com"},
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid or expired link",
+                examples=[
+                    OpenApiExample(
+                        "Invalid Token",
+                        value={
+                            "status": {"success": False, "code": 400, "message": "Invalid or expired verification link."},
+                            "data": None,
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
         },
         examples=[
             OpenApiExample(
@@ -186,13 +265,44 @@ class LoginView(APIView):
         ),
         request=LoginSerializer,
         responses={
-            200: OpenApiResponse(response=SuccessResponseSerializer, description="OTP sent"),
-            400: OpenApiResponse(response=ErrorResponseSerializer,   description="Invalid credentials or unverified email"),
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="OTP sent",
+                examples=[
+                    OpenApiExample(
+                        "Success",
+                        value={
+                            "status": {"success": True, "code": 200, "message": "OTP sent to customer@example.com. Enter it to complete login."},
+                            "data": {"email": "customer@example.com"},
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid credentials or unverified email",
+                examples=[
+                    OpenApiExample(
+                        "Invalid Credentials",
+                        value={
+                            "status": {"success": False, "code": 400, "message": "Invalid email or password."},
+                            "data": None,
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
         },
         examples=[
             OpenApiExample(
-                "Login request",
+                "Customer Login",
                 value={"email": "customer@example.com", "password": "Secret@123"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Admin Login",
+                value={"email": "admin@example.com", "password": "Admin@123"},
                 request_only=True,
             ),
         ],
@@ -220,27 +330,45 @@ class VerifyOTPView(APIView):
         description="Submit the OTP received by email. Returns JWT access and refresh tokens.",
         request=VerifyOTPSerializer,
         responses={
-            200: OpenApiResponse(response=SuccessResponseSerializer, description="Login successful — tokens returned"),
-            400: OpenApiResponse(response=ErrorResponseSerializer,   description="Invalid or expired OTP"),
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Login successful — tokens returned",
+                examples=[
+                    OpenApiExample(
+                        "Success",
+                        value={
+                            "status": {"success": True, "code": 200, "message": "Login successful."},
+                            "data": {
+                                "access":  "<jwt-access-token>",
+                                "refresh": "<jwt-refresh-token>",
+                                "user": {"id": "uuid", "email": "customer@example.com",
+                                         "role": "CUSTOMER", "full_name": "John Doe"},
+                            },
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid or expired OTP",
+                examples=[
+                    OpenApiExample(
+                        "Invalid OTP",
+                        value={
+                            "status": {"success": False, "code": 400, "message": "Invalid or expired OTP."},
+                            "data": None,
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
         },
         examples=[
             OpenApiExample(
                 "OTP verification",
                 value={"email": "customer@example.com", "otp": "847291"},
                 request_only=True,
-            ),
-            OpenApiExample(
-                "Success response",
-                value={
-                    "status": {"success": True, "code": 200, "message": "Login successful."},
-                    "data": {
-                        "access":  "<jwt-access-token>",
-                        "refresh": "<jwt-refresh-token>",
-                        "user": {"id": "uuid", "email": "customer@example.com",
-                                 "role": "CUSTOMER", "full_name": "John Doe"},
-                    },
-                },
-                response_only=True,
             ),
         ],
     )
@@ -277,8 +405,34 @@ class RefreshTokenView(APIView):
         summary="Refresh JWT access token",
         request=RefreshTokenSerializer,
         responses={
-            200: OpenApiResponse(response=SuccessResponseSerializer, description="New access token"),
-            401: OpenApiResponse(response=ErrorResponseSerializer,   description="Invalid or expired refresh token"),
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="New access token",
+                examples=[
+                    OpenApiExample(
+                        "Success",
+                        value={
+                            "status": {"success": True, "code": 200, "message": "Access token refreshed."},
+                            "data": {"access": "<jwt-access-token>"},
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+            401: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Invalid or expired refresh token",
+                examples=[
+                    OpenApiExample(
+                        "Invalid Token",
+                        value={
+                            "status": {"success": False, "code": 401, "message": "Token is invalid or expired."},
+                            "data": None,
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
         },
         examples=[
             OpenApiExample(
@@ -315,16 +469,8 @@ class CronSendRemindersView(APIView):
 
     Called by crojob.org on a schedule.
     Protected by X-Cron-Secret header matching CRON_SECRET_KEY in settings.
-
-    Request body:
-        {
-            "recipients": [
-                {"email": "user@example.com", "subject": "...", "body": "..."},
-                ...
-            ]
-        }
     """
-    permission_classes = [AllowAny]  # Auth is via the secret header, not JWT
+    permission_classes = [AllowAny]
 
     @extend_schema(
         summary="Cron — send scheduled reminder emails",
@@ -349,7 +495,6 @@ class CronSendRemindersView(APIView):
         ],
     )
     def post(self, request):
-        # Validate secret
         secret = request.headers.get("X-Cron-Secret", "")
         if not settings.CRON_SECRET_KEY or secret != settings.CRON_SECRET_KEY:
             return error_response("Unauthorized.", status_code=401)
@@ -360,8 +505,8 @@ class CronSendRemindersView(APIView):
                 "Provide a non-empty 'recipients' list.", status_code=400
             )
 
-        sent    = []
-        failed  = []
+        sent   = []
+        failed = []
 
         for item in recipients:
             email   = item.get("email", "").strip()

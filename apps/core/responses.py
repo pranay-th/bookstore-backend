@@ -3,17 +3,10 @@ apps/core/responses.py
 
 Standardised API response helpers.
 
-Success envelope:
+Every response — success or error — follows the same shape:
     {
-        "status": { "success": true,  "code": 200, "message": "Login successful." },
+        "status": { "success": true|false, "code": <int>, "message": "<str>" },
         "data":   { ... } | null
-    }
-
-Error envelope:
-    {
-        "status": { "success": false, "code": 400, "message": "Validation failed." },
-        "data":   null,
-        "errors": { "email": ["This field is required."] } | null
     }
 """
 
@@ -49,19 +42,17 @@ def success_response(data=None, message="Request was successful.", status_code=2
     )
 
 
-def error_response(message="An error occurred.", errors=None, status_code=400):
+def error_response(message="An error occurred.", status_code=400):
     """
     Return a standardised error envelope.
 
     Args:
         message     : A short human-readable description of what went wrong.
-        errors      : Dict of field-level errors, or None for non-validation errors.
         status_code : HTTP status code (default 400).
 
     Example:
         return error_response(
-            message="Validation failed.",
-            errors={"email": ["This field is required."]},
+            message="Invalid email or password.",
             status_code=400,
         )
     """
@@ -72,8 +63,7 @@ def error_response(message="An error occurred.", errors=None, status_code=400):
                 "code":    status_code,
                 "message": message,
             },
-            "data":   None,
-            "errors": errors,
+            "data": None,
         },
         status=status_code,
     )
