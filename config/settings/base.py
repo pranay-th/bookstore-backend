@@ -178,6 +178,18 @@ REST_FRAMEWORK = {
 }
 
 # ---------------------------------------------------------------------------
+# drf-spectacular (Swagger)
+# No SERVERS list — drf-spectacular uses the incoming request host automatically.
+# This means Swagger UI on Render will call the Render URL, not localhost.
+# ---------------------------------------------------------------------------
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Bookstore API',
+    'DESCRIPTION': 'Bookstore backend API documentation',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+}
+
+# ---------------------------------------------------------------------------
 # JWT — djangorestframework-simplejwt
 # ---------------------------------------------------------------------------
 SIMPLE_JWT = {
@@ -243,6 +255,6 @@ CORS_ALLOWED_ORIGINS = config(
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ---------------------------------------------------------------------------
-# Logging — loguru
+# Logging
 # ---------------------------------------------------------------------------
 LOG_LEVEL = config('LOG_LEVEL', default='DEBUG')
