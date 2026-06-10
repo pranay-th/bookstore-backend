@@ -8,6 +8,7 @@ dj-database-url==2.3.0
 
 # Environment
 python-decouple==3.8
+python-dotenv==1.0.1
 
 # CORS
 django-cors-headers==4.6.0

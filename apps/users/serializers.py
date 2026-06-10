@@ -15,6 +15,7 @@ import logging
 
 from django.contrib.auth import authenticate
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
 
 from apps.core.exceptions import (
     AccountDisabledError,
@@ -43,15 +44,25 @@ class SignupSerializer(serializers.ModelSerializer):
         choices=[("CUSTOMER", "Customer"), ("AUTHOR", "Author")],
         default="CUSTOMER",
     )
+    # Override model-level UniqueValidator message so it uses our wording
+    email = serializers.EmailField(
+        validators=[
+            UniqueValidator(
+                queryset=User.objects.all(),
+                message="An account with this email already exists.",
+            )
+        ]
+    )
 
     class Meta:
         model = User
         fields = ["email", "password", "first_name", "last_name", "phone", "role"]
 
     def validate_email(self, value):
-        if User.objects.filter(email__iexact=value).exists():
+        normalized = value.lower().strip()
+        if User.objects.filter(email__iexact=normalized).exists():
             raise serializers.ValidationError("An account with this email already exists.")
-        return value.lower()
+        return normalized
 
     def validate_password(self, value):
         # At least one uppercase, one lowercase, one digit
