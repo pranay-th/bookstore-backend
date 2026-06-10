@@ -2,8 +2,12 @@
 Base settings shared across all environments.
 """
 import os
+from datetime import timedelta
 from pathlib import Path
+
+import dj_database_url
 from decouple import config
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -11,7 +15,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Core
 # ---------------------------------------------------------------------------
 SECRET_KEY = config('SECRET_KEY', default='change-me-in-production')
-DEBUG      = config('DEBUG', default=False, cast=bool)
+DEBUG = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
@@ -81,7 +85,7 @@ ROOT_URLCONF = 'config.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS':    [BASE_DIR / 'templates'],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -101,9 +105,6 @@ ASGI_APPLICATION = 'config.asgi.application'
 # Database — Neon PostgreSQL (pooled, SSL required)
 # DATABASE_URL must be set in the environment. No SQLite fallback.
 # ---------------------------------------------------------------------------
-import dj_database_url
-from django.core.exceptions import ImproperlyConfigured
-
 _database_url = config('DATABASE_URL', default='')
 if not _database_url:
     raise ImproperlyConfigured(
@@ -142,17 +143,17 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalisation
 # ---------------------------------------------------------------------------
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE     = 'UTC'
-USE_I18N      = True
-USE_TZ        = True
+TIME_ZONE = 'UTC'
+USE_I18N = True
+USE_TZ = True
 
 # ---------------------------------------------------------------------------
 # Static / Media
 # ---------------------------------------------------------------------------
-STATIC_URL  = '/static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-MEDIA_URL   = '/media/'
-MEDIA_ROOT  = BASE_DIR / 'mediafiles'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'mediafiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # ---------------------------------------------------------------------------
@@ -179,12 +180,14 @@ REST_FRAMEWORK = {
 # ---------------------------------------------------------------------------
 # JWT — djangorestframework-simplejwt
 # ---------------------------------------------------------------------------
-from datetime import timedelta
-
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME':  timedelta(minutes=config('JWT_ACCESS_TOKEN_LIFETIME_MINUTES', default=60,  cast=int)),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=config('JWT_REFRESH_TOKEN_LIFETIME_DAYS',    default=7,   cast=int)),
-    'ROTATE_REFRESH_TOKENS':  True,
+    'ACCESS_TOKEN_LIFETIME': timedelta(
+        minutes=config('JWT_ACCESS_TOKEN_LIFETIME_MINUTES', default=60, cast=int)
+    ),
+    'REFRESH_TOKEN_LIFETIME': timedelta(
+        days=config('JWT_REFRESH_TOKEN_LIFETIME_DAYS', default=7, cast=int)
+    ),
+    'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': False,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': config('SECRET_KEY', default='change-me'),
@@ -201,13 +204,15 @@ REDIS_URL = config('REDIS_URL', default='redis://localhost:6379')
 # ---------------------------------------------------------------------------
 # OTP settings
 # ---------------------------------------------------------------------------
-OTP_LENGTH          = config('OTP_LENGTH',          default=6,  cast=int)
-OTP_EXPIRY_MINUTES  = config('OTP_EXPIRY_MINUTES',  default=10, cast=int)
+OTP_LENGTH = config('OTP_LENGTH', default=6, cast=int)
+OTP_EXPIRY_MINUTES = config('OTP_EXPIRY_MINUTES', default=10, cast=int)
 
 # ---------------------------------------------------------------------------
 # Email verification settings
 # ---------------------------------------------------------------------------
-EMAIL_VERIFICATION_EXPIRY_MINUTES = config('EMAIL_VERIFICATION_EXPIRY_MINUTES', default=1440, cast=int)
+EMAIL_VERIFICATION_EXPIRY_MINUTES = config(
+    'EMAIL_VERIFICATION_EXPIRY_MINUTES', default=1440, cast=int
+)
 FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
 
 # ---------------------------------------------------------------------------
@@ -221,7 +226,7 @@ CRON_SECRET_KEY = config('CRON_SECRET_KEY', default='')
 ANYMAIL = {
     'SENDGRID_API_KEY': config('SENDGRID_API_KEY', default=''),
 }
-DEFAULT_FROM_EMAIL  = config('DEFAULT_FROM_EMAIL', default='noreply@example.com')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@example.com')
 
 # ---------------------------------------------------------------------------
 # CORS
@@ -239,9 +244,5 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ---------------------------------------------------------------------------
 # Logging — loguru
-# Intercepts Django's stdlib logging and routes it through loguru.
 # ---------------------------------------------------------------------------
-from apps.core.logging import setup_loguru  # noqa: E402
-
 LOG_LEVEL = config('LOG_LEVEL', default='DEBUG')
-setup_loguru(log_level=LOG_LEVEL, base_dir=BASE_DIR)
