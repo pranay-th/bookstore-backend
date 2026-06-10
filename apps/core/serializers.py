@@ -7,17 +7,10 @@ Shared serializers including:
 - SuccessResponseSerializer : schema for successful API envelopes.
 - ErrorResponseSerializer   : schema for error API envelopes.
 
-Success envelope:
+Every response follows the same shape:
     {
-        "status": { "success": true,  "code": 200, "message": "Login successful." },
+        "status": { "success": true|false, "code": <int>, "message": "<str>" },
         "data":   { ... } | null
-    }
-
-Error envelope:
-    {
-        "status": { "success": false, "code": 400, "message": "Validation failed." },
-        "data":   null,
-        "errors": { "email": ["This field is required."] } | null
     }
 """
 from rest_framework import serializers
@@ -69,12 +62,10 @@ class SuccessResponseSerializer(serializers.Serializer):
 
         {
             "status": { "success": true, "code": 200, "message": "Login successful." },
-            "data":   { ... }
+            "data":   { ... } | null
         }
     """
-    status = StatusObjectSerializer(
-        help_text="Status metadata.",
-    )
+    status = StatusObjectSerializer()
     data = serializers.JSONField(
         allow_null=True,
         help_text="Response payload. null when there is no data to return.",
@@ -88,24 +79,13 @@ class ErrorResponseSerializer(serializers.Serializer):
     Shape::
 
         {
-            "status": { "success": false, "code": 400, "message": "Validation failed." },
-            "data":   null,
-            "errors": { "email": ["This field is required."] } | null
+            "status": { "success": false, "code": 400, "message": "Invalid credentials." },
+            "data":   null
         }
     """
-    status = StatusObjectSerializer(
-        help_text="Status metadata.",
-    )
+    status = StatusObjectSerializer()
     data = serializers.JSONField(
         allow_null=True,
         default=None,
         help_text="Always null for error responses.",
-    )
-    errors = serializers.JSONField(
-        allow_null=True,
-        required=False,
-        help_text=(
-            "Field-level validation errors as a dict, "
-            "or null for non-validation errors."
-        ),
     )

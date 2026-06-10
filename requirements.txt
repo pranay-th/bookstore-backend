@@ -34,3 +34,6 @@ redis==5.0.8
 
 # Email — SendGrid via django-anymail
 django-anymail[sendgrid]==11.1
+
+# Logging
+loguru==0.7.2
