@@ -380,6 +380,6 @@ class CronSendRemindersView(APIView):
                 failed.append({"email": email, "reason": str(exc)})
 
         return success_response(
-            data={"sent": sent, "failed": failed},
+            data={"sent": len(sent), "failed": len(failed)},
             message=f"{len(sent)} reminder(s) sent, {len(failed)} failed.",
         )
