@@ -34,6 +34,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.core.exceptions import ServiceUnavailableError
 from apps.core.responses import error_response, success_response
 from apps.core.serializers import ErrorResponseSerializer, SuccessResponseSerializer
+from apps.core.utils import mask_email
 
 from .emails import send_verification_email
 from .models import User
@@ -411,9 +412,9 @@ class LoginView(APIView):
                             "status": {
                                 "success": True,
                                 "code": 200,
-                                "message": "OTP sent to customer@example.com. Enter it to complete login.",
+                                "message": "OTP sent to ru****93@gmail.com. Enter it to complete login.",
                             },
-                            "data": {"email": "customer@example.com"},
+                            "data": {"email": "ru****93@gmail.com"},
                         },
                         response_only=True,
                     ),
@@ -504,9 +505,10 @@ class LoginView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
 
+        masked = mask_email(user.email)
         return success_response(
-            data={"email": user.email},
-            message=f"OTP sent to {user.email}. Enter it to complete login.",
+            data={"email": masked},
+            message=f"OTP sent to {masked}. Enter it to complete login.",
         )
 
 
