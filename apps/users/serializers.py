@@ -205,7 +205,7 @@ class LoginSerializer(serializers.Serializer):
                 "Could not send OTP email. Please try again in a moment."
             )
 
-        logger.info("OTP sent to user_id=%s email='%s'", user.id, user.email)
+        logger.info("OTP sent to user_id=%s email=%r (db_email=%r)", user.id, email, user.email)
         attrs["user"] = user
         return attrs
 
@@ -224,9 +224,10 @@ class VerifyOTPSerializer(serializers.Serializer):
         try:
             user = User.objects.get(email__iexact=email)
         except User.DoesNotExist:
-            # Don't reveal whether the email exists
+            # Log the exact byte representation so we can see invisible characters
             logger.warning(
-                "OTP verify attempt for unknown email='%s'", email
+                "OTP verify — user not found. email repr: %r (len=%d)",
+                email, len(email),
             )
             raise serializers.ValidationError("Invalid or expired OTP.")
 
