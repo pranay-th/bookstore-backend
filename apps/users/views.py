@@ -82,7 +82,7 @@ class SignupView(APIView):
                             },
                             "data": {
                                 "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                                "email": "customer@example.com",
+                                "email": "cu****er@example.com",
                                 "role": "CUSTOMER",
                                 "full_name": "John Doe",
                             },
@@ -319,7 +319,7 @@ class VerifyEmailView(APIView):
                                 "code": 200,
                                 "message": "Email verified successfully. You can now log in.",
                             },
-                            "data": {"email": "customer@example.com"},
+                            "data": {"email": "cu****er@example.com"},
                         },
                         response_only=True,
                     ),
@@ -547,7 +547,7 @@ class VerifyOTPView(APIView):
                                 "refresh": "<jwt-refresh-token>",
                                 "user": {
                                     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                                    "email": "customer@example.com",
+                                    "email": "cu****er@example.com",
                                     "role": "CUSTOMER",
                                     "full_name": "John Doe",
                                 },
