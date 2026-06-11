@@ -1,16 +1,34 @@
 """
-users/urls.py — Phase 0 placeholder routes.
-TODO: Register router in config/urls.py when ready.
-"""
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, UserProfileViewSet, UserAddressViewSet
+apps/users/urls.py
 
-router = DefaultRouter()
-router.register('users',           UserViewSet,        basename='user')
-router.register('users/profiles',  UserProfileViewSet, basename='user-profile')
-router.register('users/addresses', UserAddressViewSet, basename='user-address')
+Auth endpoints mounted at /user/ in config/urls.py
+
+  POST /user/signup/                  Register + send verification email
+  POST /user/verify-email/            Verify email (uid + token from link)
+  POST /user/resend-verification/     Resend verification email
+  POST /user/login/                   Credentials → OTP sent
+  POST /user/verify-otp/              OTP → JWT tokens
+  POST /user/token/refresh/           Refresh JWT access token
+  POST /user/cron/send-reminders/     Cron-triggered reminder emails
+"""
+
+from django.urls import path
+from .views import (
+    SignupView,
+    VerifyEmailView,
+    ResendVerificationView,
+    LoginView,
+    VerifyOTPView,
+    RefreshTokenView,
+    CronSendRemindersView,
+)
 
 urlpatterns = [
-    path('', include(router.urls)),
+    path("signup/",               SignupView.as_view(),              name="signup"),
+    path("verify-email/",         VerifyEmailView.as_view(),         name="verify-email"),
+    path("resend-verification/",  ResendVerificationView.as_view(),  name="resend-verification"),
+    path("login/",                LoginView.as_view(),               name="login"),
+    path("verify-otp/",           VerifyOTPView.as_view(),           name="verify-otp"),
+    path("token/refresh/",        RefreshTokenView.as_view(),        name="token-refresh"),
+    path("cron/send-reminders/",  CronSendRemindersView.as_view(),   name="cron-send-reminders"),
 ]

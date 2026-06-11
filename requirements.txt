@@ -8,6 +8,7 @@ dj-database-url==2.3.0
 
 # Environment
 python-decouple==3.8
+python-dotenv==1.0.1
 
 # CORS
 django-cors-headers==4.6.0
@@ -21,7 +22,19 @@ gunicorn==23.0.0
 # Utilities
 pillow==11.1.0
 django-filter==24.3
+drf-spectacular==0.29.0
 
-# TODO: Add celery + redis for background tasks
-# TODO: Add drf-spectacular for OpenAPI schema generation
-# TODO: Add sentry-sdk for error tracking
+# Authentication
+djangorestframework-simplejwt==5.3.1
+
+# OTP
+PyOTP==2.9.0
+
+# Redis (OTP storage)
+redis==5.0.8
+
+# Email — SendGrid via django-anymail
+django-anymail[sendgrid]==11.1
+
+# Logging
+loguru==0.7.2
