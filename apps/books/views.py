@@ -24,6 +24,7 @@ from rest_framework.viewsets import ModelViewSet
 
 from apps.core.responses import success_response
 from apps.core.serializers import SuccessResponseSerializer
+from apps.core.pagination import StandardResultsSetPagination
 
 from .models import Book
 from .serializers import BookSerializer
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 class BookViewSet(ModelViewSet):
     serializer_class = BookSerializer
+    pagination_class = StandardResultsSetPagination
 
     def get_permissions(self):
         if self.action in ("create", "update", "partial_update", "destroy"):
@@ -54,8 +56,9 @@ class BookViewSet(ModelViewSet):
     @extend_schema(
         summary="List all books",
         description=(
-            "Returns all active books from the database.\n\n"
-            "Supports `?search=` query param to filter by title or author."
+            "Returns active books from the database, paginated.\n\n"
+            "Supports `?search=` to filter by title or author and "
+            "`?page=` / `?page_size=` for pagination."
         ),
         parameters=[
             OpenApiParameter(
@@ -64,11 +67,38 @@ class BookViewSet(ModelViewSet):
                 required=False,
                 type=str,
             ),
+            OpenApiParameter(
+                name="page",
+                description="Page number (default 1)",
+                required=False,
+                type=int,
+            ),
+            OpenApiParameter(
+                name="page_size",
+                description="Results per page (default 20, max 100)",
+                required=False,
+                type=int,
+            ),
         ],
         responses={200: BookSerializer(many=True)},
     )
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = BookSerializer(page, many=True)
+            paginator = self.paginator
+            payload = {
+                "results": serializer.data,
+                "count": paginator.page.paginator.count,
+                "num_pages": paginator.page.paginator.num_pages,
+                "current_page": paginator.page.number,
+                "page_size": paginator.get_page_size(request),
+                "has_next": paginator.page.has_next(),
+                "has_previous": paginator.page.has_previous(),
+            }
+            return success_response(data=payload, message="Books retrieved.")
+
         serializer = BookSerializer(queryset, many=True)
         return success_response(data=serializer.data, message="Books retrieved.")
 

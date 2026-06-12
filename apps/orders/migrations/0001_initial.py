@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ('users', '0005_merge_20260612_1418'),
+        ('users', '0004_add_is_email_verified'),
         ('books', '0001_initial'),
     ]
 
