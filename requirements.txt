@@ -38,3 +38,6 @@ django-anymail[sendgrid]==11.1
 
 # Logging
 loguru==0.7.2
+
+# HTTP client (Open Library API)
+httpx==0.28.1
