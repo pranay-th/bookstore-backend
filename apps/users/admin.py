@@ -12,7 +12,6 @@ class UserAdmin(BaseUserAdmin):
         (None,           {'fields': ('email', 'password')}),
         ('Personal info', {'fields': ('first_name', 'last_name', 'phone')}),
         ('Permissions',  {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
-        ('Dates',        {'fields': ('date_joined',)}),
     )
     add_fieldsets = (
         (None, {
@@ -26,7 +25,7 @@ class UserAdmin(BaseUserAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display  = ('user', 'preferred_language', 'preferred_currency', 'newsletter_opt_in')
+    list_display  = ('user', 'preferred_language', 'newsletter_opt_in')
     search_fields = ('user__email',)
 
 

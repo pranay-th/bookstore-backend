@@ -2,8 +2,12 @@
 Base settings shared across all environments.
 """
 import os
+from datetime import timedelta
 from pathlib import Path
+
+import dj_database_url
 from decouple import config
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -11,7 +15,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Core
 # ---------------------------------------------------------------------------
 SECRET_KEY = config('SECRET_KEY', default='change-me-in-production')
-DEBUG      = config('DEBUG', default=False, cast=bool)
+DEBUG = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
@@ -35,6 +39,8 @@ THIRD_PARTY_APPS = [
     'rest_framework',
     'corsheaders',
     'django_filters',
+    'drf_spectacular',
+    'anymail',
 ]
 
 LOCAL_APPS = [
@@ -79,7 +85,7 @@ ROOT_URLCONF = 'config.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS':    [BASE_DIR / 'templates'],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -97,27 +103,29 @@ ASGI_APPLICATION = 'config.asgi.application'
 
 # ---------------------------------------------------------------------------
 # Database — Neon PostgreSQL (pooled, SSL required)
+# DATABASE_URL must be set in the environment. No SQLite fallback.
 # ---------------------------------------------------------------------------
-import dj_database_url
+_database_url = config('DATABASE_URL', default='')
+if not _database_url:
+    raise ImproperlyConfigured(
+        'DATABASE_URL environment variable is not set. '
+        'This project requires PostgreSQL — set DATABASE_URL to your Neon connection string.'
+    )
 
-_db_config = dj_database_url.config(
-    env='DATABASE_URL',
-    default='sqlite:///db.sqlite3',
-    conn_max_age=600,
-    ssl_require=True,
-)
+DATABASES = {
+    'default': dj_database_url.parse(
+        _database_url,
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+}
 
-# Neon requires sslmode=require and channel_binding=require.
-# dj-database-url parses these from the query string automatically,
-# but we enforce the SSL options here as a safety net.
-if _db_config.get('ENGINE') == 'django.db.backends.postgresql':
-    _db_config.setdefault('OPTIONS', {})
-    _db_config['OPTIONS'].update({
-        'sslmode': 'require',
-        'channel_binding': 'require',
-    })
-
-DATABASES = {'default': _db_config}
+# Neon requires SSL and channel_binding on every connection.
+DATABASES['default'].setdefault('OPTIONS', {})
+DATABASES['default']['OPTIONS'].update({
+    'sslmode': 'require',
+    'channel_binding': 'require',
+})
 
 # ---------------------------------------------------------------------------
 # Auth
@@ -135,23 +143,24 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalisation
 # ---------------------------------------------------------------------------
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE     = 'UTC'
-USE_I18N      = True
-USE_TZ        = True
+TIME_ZONE = 'UTC'
+USE_I18N = True
+USE_TZ = True
 
 # ---------------------------------------------------------------------------
 # Static / Media
 # ---------------------------------------------------------------------------
-STATIC_URL  = '/static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-MEDIA_URL   = '/media/'
-MEDIA_ROOT  = BASE_DIR / 'mediafiles'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'mediafiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # ---------------------------------------------------------------------------
 # DRF
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_FILTER_BACKENDS': [
@@ -159,9 +168,77 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
-    # TODO: Add DEFAULT_AUTHENTICATION_CLASSES when auth is implemented
-    # TODO: Add DEFAULT_PERMISSION_CLASSES when auth is implemented
+    'EXCEPTION_HANDLER': 'apps.core.exceptions.custom_exception_handler',
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
 }
+
+# ---------------------------------------------------------------------------
+# drf-spectacular (Swagger)
+# No SERVERS list — drf-spectacular uses the incoming request host automatically.
+# This means Swagger UI on Render will call the Render URL, not localhost.
+# ---------------------------------------------------------------------------
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Bookstore API',
+    'DESCRIPTION': 'Bookstore backend API documentation',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+}
+
+# ---------------------------------------------------------------------------
+# JWT — djangorestframework-simplejwt
+# ---------------------------------------------------------------------------
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(
+        minutes=config('JWT_ACCESS_TOKEN_LIFETIME_MINUTES', default=60, cast=int)
+    ),
+    'REFRESH_TOKEN_LIFETIME': timedelta(
+        days=config('JWT_REFRESH_TOKEN_LIFETIME_DAYS', default=7, cast=int)
+    ),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': config('SECRET_KEY', default='change-me'),
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+}
+
+# ---------------------------------------------------------------------------
+# Redis — OTP storage
+# ---------------------------------------------------------------------------
+REDIS_URL = config('REDIS_URL', default='redis://localhost:6379')
+
+# ---------------------------------------------------------------------------
+# OTP settings
+# ---------------------------------------------------------------------------
+OTP_LENGTH = config('OTP_LENGTH', default=6, cast=int)
+OTP_EXPIRY_MINUTES = config('OTP_EXPIRY_MINUTES', default=10, cast=int)
+
+# ---------------------------------------------------------------------------
+# Email verification settings
+# ---------------------------------------------------------------------------
+EMAIL_VERIFICATION_EXPIRY_MINUTES = config(
+    'EMAIL_VERIFICATION_EXPIRY_MINUTES', default=1440, cast=int
+)
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
+
+# ---------------------------------------------------------------------------
+# Cron secret — used to authenticate requests from crojob.org
+# ---------------------------------------------------------------------------
+CRON_SECRET_KEY = config('CRON_SECRET_KEY', default='')
+
+# ---------------------------------------------------------------------------
+# SendGrid via django-anymail
+# ---------------------------------------------------------------------------
+ANYMAIL = {
+    'SENDGRID_API_KEY': config('SENDGRID_API_KEY', default=''),
+}
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@example.com')
 
 # ---------------------------------------------------------------------------
 # CORS
@@ -172,7 +249,19 @@ CORS_ALLOWED_ORIGINS = config(
     cast=lambda v: [o.strip() for o in v.split(',')],
 )
 
+# Allow all Vercel preview/production URLs via regex so the free-tier
+# changing subdomain never causes a CORS block.
+# Matches: https://*.vercel.app and https://*-pranay-thakurs-projects.vercel.app etc.
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r'^https://[\w-]+\.vercel\.app$',
+]
+
 # ---------------------------------------------------------------------------
 # Default primary key
 # ---------------------------------------------------------------------------
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+LOG_LEVEL = config('LOG_LEVEL', default='DEBUG')
