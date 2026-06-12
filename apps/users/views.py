@@ -16,6 +16,7 @@ Error handling:
   Views never catch generic Exception — only specific typed exceptions
   that require view-level handling (e.g. TokenError from simplejwt).
 """
+import hmac
 import logging
 
 from django.conf import settings
@@ -829,9 +830,11 @@ class CronSendRemindersView(APIView):
         ],
     )
     def post(self, request):
-        # Validate secret
+        # Validate secret (constant-time comparison to avoid timing attacks)
         secret = request.headers.get("X-Cron-Secret", "")
-        if not settings.CRON_SECRET_KEY or secret != settings.CRON_SECRET_KEY:
+        if not settings.CRON_SECRET_KEY or not hmac.compare_digest(
+            secret, settings.CRON_SECRET_KEY
+        ):
             logger.warning(
                 "Cron endpoint called with invalid secret from IP=%s",
                 request.META.get("REMOTE_ADDR"),

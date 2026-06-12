@@ -25,7 +25,11 @@ class Book(models.Model):
 
     class Meta:
         db_table = "books"
-        ordering = ["-created_at"]
+        # Tiebreaker on id keeps pagination stable: bulk-imported rows share
+        # near-identical created_at values, so without a unique secondary sort
+        # Postgres can return rows in a different order across page requests,
+        # causing books to repeat or be skipped as users paginate.
+        ordering = ["-created_at", "id"]
 
     def __str__(self):
         return self.title
