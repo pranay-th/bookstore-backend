@@ -249,6 +249,13 @@ CORS_ALLOWED_ORIGINS = config(
     cast=lambda v: [o.strip() for o in v.split(',')],
 )
 
+# Allow all Vercel preview/production URLs via regex so the free-tier
+# changing subdomain never causes a CORS block.
+# Matches: https://*.vercel.app and https://*-pranay-thakurs-projects.vercel.app etc.
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r'^https://[\w-]+\.vercel\.app$',
+]
+
 # ---------------------------------------------------------------------------
 # Default primary key
 # ---------------------------------------------------------------------------
