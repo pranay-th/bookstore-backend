@@ -283,6 +283,7 @@ RESPONSE_CACHE_EXCLUDE_PATHS = [
     '/redoc/',
     '/favicon.ico',
     '/user/',       # all auth endpoints — login, signup, OTP, etc.
+    '/api/author/',  # author studio — per-user personalised, never cache
 ]
 
 # Optional: set RESPONSE_CACHE_INCLUDE_PATHS to restrict caching to only
