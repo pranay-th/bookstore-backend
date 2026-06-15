@@ -23,7 +23,7 @@ from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework.viewsets import ModelViewSet
 
 from apps.core.responses import success_response
-from apps.core.serializers import SuccessResponseSerializer
+from apps.core.serializers import SuccessResponseSerializer, ErrorResponseSerializer
 from apps.core.pagination import StandardResultsSetPagination
 
 from .models import Book
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 class BookViewSet(ModelViewSet):
     serializer_class = BookSerializer
-    pagination_class = StandardResultsSetPagination
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_permissions(self):
         if self.action in ("create", "update", "partial_update", "destroy"):
@@ -80,27 +80,64 @@ class BookViewSet(ModelViewSet):
                 type=int,
             ),
         ],
-        responses={200: BookSerializer(many=True)},
+        responses={
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Paginated list of books",
+                examples=[
+                    OpenApiExample(
+                        "Books list",
+                        value={
+                            "status": {
+                                "success": True,
+                                "message": "Books retrieved.",
+                            },
+                            "data": {
+                                "results": [
+                                    {
+                                        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                                        "title": "Harry Potter and the Philosopher's Stone",
+                                        "author": "J.K. Rowling",
+                                        "isbn": "9780747532699",
+                                        "description": "A young wizard's journey begins.",
+                                        "cover_url": "https://covers.openlibrary.org/b/id/10110415-M.jpg",
+                                        "published_year": 1997,
+                                        "language": "English",
+                                        "price": "499.00",
+                                        "stock": 50,
+                                        "is_active": True,
+                                        "created_at": "2026-06-12T10:00:00Z",
+                                    }
+                                ],
+                                "count": 10000,
+                                "num_pages": 500,
+                                "current_page": 1,
+                                "page_size": 20,
+                                "has_next": True,
+                                "has_previous": False,
+                            },
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+        },
     )
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = BookSerializer(page, many=True)
-            paginator = self.paginator
-            payload = {
-                "results": serializer.data,
-                "count": paginator.page.paginator.count,
-                "num_pages": paginator.page.paginator.num_pages,
-                "current_page": paginator.page.number,
-                "page_size": paginator.get_page_size(request),
-                "has_next": paginator.page.has_next(),
-                "has_previous": paginator.page.has_previous(),
-            }
-            return success_response(data=payload, message="Books retrieved.")
-
-        serializer = BookSerializer(queryset, many=True)
-        return success_response(data=serializer.data, message="Books retrieved.")
+        paginator = StandardResultsSetPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = BookSerializer(page, many=True)
+        payload = {
+            "results": serializer.data,
+            "count": paginator.page.paginator.count,
+            "num_pages": paginator.page.paginator.num_pages,
+            "current_page": paginator.page.number,
+            "page_size": paginator.get_page_size(request),
+            "has_next": paginator.page.has_next(),
+            "has_previous": paginator.page.has_previous(),
+        }
+        return success_response(data=payload, message="Books retrieved.")
 
     # ------------------------------------------------------------------
     # RETRIEVE
@@ -108,7 +145,55 @@ class BookViewSet(ModelViewSet):
     @extend_schema(
         summary="Get book details",
         description="Returns full book detail from the database.",
-        responses={200: BookSerializer},
+        responses={
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Book detail",
+                examples=[
+                    OpenApiExample(
+                        "Book detail",
+                        value={
+                            "status": {
+                                "success": True,
+                                "message": "Book details retrieved.",
+                            },
+                            "data": {
+                                "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                                "title": "Harry Potter and the Philosopher's Stone",
+                                "author": "J.K. Rowling",
+                                "isbn": "9780747532699",
+                                "description": "A young wizard's journey begins.",
+                                "cover_url": "https://covers.openlibrary.org/b/id/10110415-M.jpg",
+                                "published_year": 1997,
+                                "language": "English",
+                                "price": "499.00",
+                                "stock": 50,
+                                "is_active": True,
+                                "created_at": "2026-06-12T10:00:00Z",
+                            },
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+            404: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Book not found",
+                examples=[
+                    OpenApiExample(
+                        "Not found",
+                        value={
+                            "status": {
+                                "success": False,
+                                "message": "Not found.",
+                            },
+                            "data": None,
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+        },
     )
     def retrieve(self, request, *args, **kwargs):
         book = self.get_object()
@@ -122,7 +207,55 @@ class BookViewSet(ModelViewSet):
         summary="Add a book",
         description="Add a new book to the store (admin only).",
         request=BookSerializer,
-        responses={201: BookSerializer},
+        responses={
+            201: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Book created",
+                examples=[
+                    OpenApiExample(
+                        "Book created",
+                        value={
+                            "status": {
+                                "success": True,
+                                "message": "Book added to store.",
+                            },
+                            "data": {
+                                "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                                "title": "Harry Potter and the Philosopher's Stone",
+                                "author": "J.K. Rowling",
+                                "isbn": "9780747532699",
+                                "description": "A young wizard's journey begins.",
+                                "cover_url": "https://covers.openlibrary.org/b/id/10110415-M.jpg",
+                                "published_year": 1997,
+                                "language": "English",
+                                "price": "499.00",
+                                "stock": 50,
+                                "is_active": True,
+                                "created_at": "2026-06-12T10:00:00Z",
+                            },
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+            400: OpenApiResponse(
+                response=ErrorResponseSerializer,
+                description="Validation error",
+                examples=[
+                    OpenApiExample(
+                        "Validation error",
+                        value={
+                            "status": {
+                                "success": False,
+                                "message": "title: This field is required.",
+                            },
+                            "data": None,
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+        },
         examples=[
             OpenApiExample(
                 "Add a book",
@@ -158,7 +291,33 @@ class BookViewSet(ModelViewSet):
         summary="Update a book",
         description="Update book fields (admin only). Partial updates supported.",
         request=BookSerializer,
-        responses={200: BookSerializer},
+        responses={
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Book updated",
+                examples=[
+                    OpenApiExample(
+                        "Book updated",
+                        value={
+                            "status": {
+                                "success": True,
+                                "message": "Book updated.",
+                            },
+                            "data": {
+                                "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                                "title": "Harry Potter and the Philosopher's Stone",
+                                "author": "J.K. Rowling",
+                                "isbn": "9780747532699",
+                                "price": "399.00",
+                                "stock": 100,
+                                "is_active": True,
+                            },
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+        },
     )
     def partial_update(self, request, *args, **kwargs):
         book = self.get_object()
@@ -173,6 +332,25 @@ class BookViewSet(ModelViewSet):
     @extend_schema(
         summary="Remove a book (soft delete)",
         description="Sets `is_active` to False. The book won't appear in listings.",
+        responses={
+            200: OpenApiResponse(
+                response=SuccessResponseSerializer,
+                description="Book removed",
+                examples=[
+                    OpenApiExample(
+                        "Book removed",
+                        value={
+                            "status": {
+                                "success": True,
+                                "message": "Book removed from store.",
+                            },
+                            "data": None,
+                        },
+                        response_only=True,
+                    ),
+                ],
+            ),
+        },
     )
     def destroy(self, request, *args, **kwargs):
         book = self.get_object()

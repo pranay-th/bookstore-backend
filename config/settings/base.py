@@ -56,6 +56,7 @@ LOCAL_APPS = [
     'apps.payments',
     'apps.coupons',
     'apps.reviews',
+    'apps.discussions',
     'apps.notifications',
     'apps.analytics',
 ]
@@ -188,7 +189,7 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_THROTTLE_RATES': {
         'user':                '10000/day',
-        'anon':                '1000/day',
+        'anon':                '20000/day',
         'login':               '20/minute',
         'signup':              '10/hour',
         'otp_generate':        '10/hour',
@@ -317,12 +318,12 @@ THROTTLE_RATES = {
     # General endpoints
     'search':              config('THROTTLE_SEARCH',              default='300/minute'),
     'user':                config('THROTTLE_AUTH_USER',           default='10000/day'),
-    'anon':                config('THROTTLE_ANON_USER',           default='1000/day'),
+    'anon':                config('THROTTLE_ANON_USER',           default='20000/day'),
 }
 
 # Middleware-level global limits (broader, first-line defence)
 MIDDLEWARE_THROTTLE_ENABLED   = config('MIDDLEWARE_THROTTLE_ENABLED', default=True, cast=bool)
-MIDDLEWARE_THROTTLE_ANON_RATE = config('MIDDLEWARE_THROTTLE_ANON_RATE', default='1000/day')
+MIDDLEWARE_THROTTLE_ANON_RATE = config('MIDDLEWARE_THROTTLE_ANON_RATE', default='20000/day')
 MIDDLEWARE_THROTTLE_AUTH_RATE = config('MIDDLEWARE_THROTTLE_AUTH_RATE', default='10000/day')
 
 # ---------------------------------------------------------------------------
