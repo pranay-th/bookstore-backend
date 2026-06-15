@@ -56,6 +56,7 @@ LOCAL_APPS = [
     'apps.payments',
     'apps.coupons',
     'apps.reviews',
+    'apps.discussions',
     'apps.notifications',
     'apps.analytics',
 ]
@@ -76,6 +77,9 @@ MIDDLEWARE = [
     # ThrottleMiddleware must come AFTER AuthenticationMiddleware so that
     # request.user is populated and auth vs. anon limits are applied correctly.
     'apps.core.middleware.ThrottleMiddleware',
+    # ResponseCacheMiddleware must come AFTER ThrottleMiddleware so throttled
+    # requests are blocked before we even check the cache.
+    'apps.core.middleware.ResponseCacheMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -247,7 +251,49 @@ CACHES = {
         },
         'KEY_PREFIX': 'bookstore_throttle',
     },
+    # Response cache — stores anonymous GET responses for 15 minutes.
+    # Uses Redis when available; Django falls back to LocMemCache on error.
+    'response_cache': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': REDIS_URL,
+        'OPTIONS': {
+            'socket_connect_timeout': 1,
+            'socket_timeout': 1,
+        },
+        'KEY_PREFIX': 'bookstore_response',
+    },
 }
+
+# ---------------------------------------------------------------------------
+# Response cache settings
+# ---------------------------------------------------------------------------
+RESPONSE_CACHE_ENABLED  = config('RESPONSE_CACHE_ENABLED', default=True, cast=bool)
+RESPONSE_CACHE_TIMEOUT  = config('RESPONSE_CACHE_TIMEOUT', default=900,  cast=int)   # 15 min
+RESPONSE_CACHE_ALIAS    = 'response_cache'
+RESPONSE_CACHE_MAX_SIZE = config('RESPONSE_CACHE_MAX_SIZE', default=1_048_576, cast=int)  # 1 MB
+
+# Paths that are always excluded from response caching.
+# Auth endpoints, write-heavy paths, and personalised routes should be here.
+RESPONSE_CACHE_EXCLUDE_PATHS = [
+    '/admin/',
+    '/static/',
+    '/media/',
+    '/schema/',
+    '/swagger/',
+    '/redoc/',
+    '/favicon.ico',
+    '/user/',       # all auth endpoints — login, signup, OTP, etc.
+    '/api/author/',  # author studio — per-user personalised, never cache
+]
+
+# Optional: set RESPONSE_CACHE_INCLUDE_PATHS to restrict caching to only
+# specific path prefixes.  Leave as None to cache all qualifying GET paths.
+# Example: ['/api/books/', '/api/authors/', '/api/categories/']
+RESPONSE_CACHE_INCLUDE_PATHS = config(
+    'RESPONSE_CACHE_INCLUDE_PATHS',
+    default='',
+    cast=lambda v: [p.strip() for p in v.split(',') if p.strip()] or None,
+)
 
 # ---------------------------------------------------------------------------
 # Throttle rates — override per environment via settings or THROTTLE_RATES dict

@@ -26,17 +26,18 @@ urlpatterns = [
     ),
 
     # TODO: Uncomment routes as each app is implemented
-    # path('api/authors/',       include('apps.authors.urls')),
+    path('api/', include('apps.authors.urls')),
     path('api/', include('apps.categories.urls')),
     path('api/', include('apps.books.urls')),
+    path('api/', include('apps.books.author_urls')),
     path('api/', include('apps.notifications.urls')),
     path('api/', include('apps.cart.urls')),
+    path('api/', include('apps.reviews.urls')),
+    path('api/', include('apps.discussions.urls')),
     # path('api/inventory/',     include('apps.inventory.urls')),
     # path('api/wishlist/',      include('apps.wishlist.urls')),
     # path('api/orders/',        include('apps.orders.urls')),
     # path('api/payments/',      include('apps.payments.urls')),
     # path('api/coupons/',       include('apps.coupons.urls')),
-    # path('api/reviews/',       include('apps.reviews.urls')),
-    # path('api/notifications/', include('apps.notifications.urls')),
     # path('api/analytics/',     include('apps.analytics.urls')),
 ]
