@@ -1,8 +1,18 @@
 from rest_framework import serializers
 from .models import Category
 
+
 class CategorySerializer(serializers.ModelSerializer):
-    # TODO: Add children serializer for nested category tree
     class Meta:
-        model  = Category
-        fields = '__all__'
+        model = Category
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "description",
+            "icon",
+            "parent",
+            "is_active",
+            "created_at",
+        ]
+        read_only_fields = ["id", "slug", "created_at"]

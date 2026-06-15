@@ -5,7 +5,7 @@ Standardised API response helpers.
 
 Every response — success or error — follows the same shape:
     {
-        "status": { "success": true|false, "code": <int>, "message": "<str>" },
+        "status": { "success": true|false, "message": "<str>" },
         "data":   { ... } | null
     }
 """
@@ -25,7 +25,6 @@ def success_response(data=None, message="Request was successful.", status_code=2
         {
             "status": {
                 "success": True,
-                "code": status_code,
                 "message": message,
             },
             "data": data,
@@ -46,7 +45,6 @@ def error_response(message="An error occurred.", status_code=400):
         {
             "status": {
                 "success": False,
-                "code": status_code,
                 "message": message,
             },
             "data": None,
