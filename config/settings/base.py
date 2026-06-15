@@ -73,6 +73,9 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # ThrottleMiddleware must come AFTER AuthenticationMiddleware so that
+    # request.user is populated and auth vs. anon limits are applied correctly.
+    'apps.core.middleware.ThrottleMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -175,6 +178,22 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    # Global throttle defaults — individual views override with throttle_classes
+    'DEFAULT_THROTTLE_CLASSES': [
+        'apps.core.throttles.AuthenticatedUserThrottle',
+        'apps.core.throttles.AnonUserThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'user':                '10000/day',
+        'anon':                '1000/day',
+        'login':               '20/minute',
+        'signup':              '10/hour',
+        'otp_generate':        '10/hour',
+        'otp_verify':          '30/hour',
+        'resend_verification': '5/hour',
+        'password_reset':      '5/hour',
+        'search':              '300/minute',
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -209,9 +228,48 @@ SIMPLE_JWT = {
 }
 
 # ---------------------------------------------------------------------------
-# Redis — OTP storage
+# Redis — OTP storage + throttle cache
 # ---------------------------------------------------------------------------
 REDIS_URL = config('REDIS_URL', default='redis://localhost:6379')
+
+# Django cache backend — used by DRF throttle classes and the throttle middleware.
+# Falls back to in-memory cache if Redis is unavailable (development only).
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+    },
+    'throttle': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': REDIS_URL,
+        'OPTIONS': {
+            'socket_connect_timeout': 1,
+            'socket_timeout': 1,
+        },
+        'KEY_PREFIX': 'bookstore_throttle',
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Throttle rates — override per environment via settings or THROTTLE_RATES dict
+# ---------------------------------------------------------------------------
+THROTTLE_RATES = {
+    # Auth endpoints (anonymous, per IP)
+    'login':               config('THROTTLE_LOGIN',               default='20/minute'),
+    'signup':              config('THROTTLE_SIGNUP',              default='10/hour'),
+    'otp_generate':        config('THROTTLE_OTP_GENERATE',        default='10/hour'),
+    'otp_verify':          config('THROTTLE_OTP_VERIFY',          default='30/hour'),
+    'resend_verification': config('THROTTLE_RESEND_VERIFICATION', default='5/hour'),
+    'password_reset':      config('THROTTLE_PASSWORD_RESET',      default='5/hour'),
+    # General endpoints
+    'search':              config('THROTTLE_SEARCH',              default='300/minute'),
+    'user':                config('THROTTLE_AUTH_USER',           default='10000/day'),
+    'anon':                config('THROTTLE_ANON_USER',           default='1000/day'),
+}
+
+# Middleware-level global limits (broader, first-line defence)
+MIDDLEWARE_THROTTLE_ENABLED   = config('MIDDLEWARE_THROTTLE_ENABLED', default=True, cast=bool)
+MIDDLEWARE_THROTTLE_ANON_RATE = config('MIDDLEWARE_THROTTLE_ANON_RATE', default='1000/day')
+MIDDLEWARE_THROTTLE_AUTH_RATE = config('MIDDLEWARE_THROTTLE_AUTH_RATE', default='10000/day')
 
 # ---------------------------------------------------------------------------
 # OTP settings

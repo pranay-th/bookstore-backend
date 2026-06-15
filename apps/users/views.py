@@ -35,6 +35,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.core.exceptions import ServiceUnavailableError
 from apps.core.responses import error_response, success_response
 from apps.core.serializers import ErrorResponseSerializer, SuccessResponseSerializer
+from apps.core.throttles import (
+    LoginThrottle,
+    OTPGenerationThrottle,
+    OTPVerificationThrottle,
+    PasswordResetThrottle,
+    ResendVerificationThrottle,
+    SignupThrottle,
+)
 from apps.core.utils import mask_email
 
 from .emails import send_verification_email
@@ -57,6 +65,7 @@ logger = logging.getLogger(__name__)
 
 class SignupView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [SignupThrottle]
 
     @extend_schema(
         summary="Register a new user",
@@ -78,7 +87,6 @@ class SignupView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 201,
                                 "message": "Registration successful. Please check your email to verify your account.",
                             },
                             "data": {
@@ -101,7 +109,6 @@ class SignupView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "email: An account with this email already exists.",
                             },
                             "data": None,
@@ -113,7 +120,6 @@ class SignupView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "password: Password must contain at least one uppercase letter.",
                             },
                             "data": None,
@@ -125,7 +131,6 @@ class SignupView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "email: This field is required. | password: This field is required.",
                             },
                             "data": None,
@@ -185,6 +190,7 @@ class SignupView(APIView):
 
 class ResendVerificationView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ResendVerificationThrottle]
 
     @extend_schema(
         summary="Resend email verification link",
@@ -204,7 +210,6 @@ class ResendVerificationView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 200,
                                 "message": "Verification email sent. Please check your inbox.",
                             },
                             "data": None,
@@ -222,7 +227,6 @@ class ResendVerificationView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "This email address has already been verified.",
                             },
                             "data": None,
@@ -240,7 +244,6 @@ class ResendVerificationView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 503,
                                 "message": "Email could not be sent. Please try again later.",
                             },
                             "data": None,
@@ -298,6 +301,7 @@ class ResendVerificationView(APIView):
 
 class VerifyEmailView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = []  # No throttle — link-based, one-time use tokens
 
     @extend_schema(
         summary="Verify email address",
@@ -317,7 +321,6 @@ class VerifyEmailView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 200,
                                 "message": "Email verified successfully. You can now log in.",
                             },
                             "data": {"email": "cu****er@example.com"},
@@ -335,7 +338,6 @@ class VerifyEmailView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "Verification link has expired or is invalid.",
                             },
                             "data": None,
@@ -347,7 +349,6 @@ class VerifyEmailView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "This email address has already been verified.",
                             },
                             "data": None,
@@ -389,6 +390,7 @@ class VerifyEmailView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [LoginThrottle, OTPGenerationThrottle]
 
     @extend_schema(
         summary="Login — step 1 (credentials)",
@@ -412,7 +414,6 @@ class LoginView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 200,
                                 "message": "OTP sent to ru****93@gmail.com. Enter it to complete login.",
                             },
                             "data": {"email": "ru****93@gmail.com"},
@@ -430,7 +431,6 @@ class LoginView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "Invalid email or password.",
                             },
                             "data": None,
@@ -448,7 +448,6 @@ class LoginView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 403,
                                 "message": "Email not verified. Please check your inbox for the verification link.",
                             },
                             "data": None,
@@ -460,7 +459,6 @@ class LoginView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 403,
                                 "message": "This account has been disabled. Please contact support.",
                             },
                             "data": None,
@@ -478,7 +476,6 @@ class LoginView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 503,
                                 "message": "Could not send OTP email. Please try again in a moment.",
                             },
                             "data": None,
@@ -519,6 +516,7 @@ class LoginView(APIView):
 
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [OTPVerificationThrottle]
 
     @extend_schema(
         summary="Login — step 2 (OTP → JWT tokens)",
@@ -540,7 +538,6 @@ class VerifyOTPView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 200,
                                 "message": "Login successful.",
                             },
                             "data": {
@@ -567,7 +564,6 @@ class VerifyOTPView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "Invalid or expired OTP.",
                             },
                             "data": None,
@@ -585,7 +581,6 @@ class VerifyOTPView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 503,
                                 "message": "OTP service is temporarily unavailable. Please try again.",
                             },
                             "data": None,
@@ -636,6 +631,7 @@ class VerifyOTPView(APIView):
 
 class RefreshTokenView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = []  # No throttle — JWT refresh has its own expiry mechanism
 
     @extend_schema(
         summary="Refresh JWT access token",
@@ -656,7 +652,6 @@ class RefreshTokenView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 200,
                                 "message": "Access token refreshed.",
                             },
                             "data": {"access": "<new-jwt-access-token>"},
@@ -674,7 +669,6 @@ class RefreshTokenView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "refresh: This field is required.",
                             },
                             "data": None,
@@ -692,7 +686,6 @@ class RefreshTokenView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 401,
                                 "message": "Token is invalid or expired.",
                             },
                             "data": None,
@@ -736,6 +729,7 @@ class RefreshTokenView(APIView):
 
 class CronSendRemindersView(APIView):
     permission_classes = [AllowAny]  # Auth via X-Cron-Secret header
+    throttle_classes = []  # Secured via secret key, not throttled
 
     @extend_schema(
         summary="Cron — send scheduled reminder emails",
@@ -758,7 +752,6 @@ class CronSendRemindersView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 200,
                                 "message": "3 reminder(s) sent, 0 failed.",
                             },
                             "data": {"sent": 3, "failed": 0},
@@ -776,7 +769,6 @@ class CronSendRemindersView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 401,
                                 "message": "Unauthorized.",
                             },
                             "data": None,
@@ -794,7 +786,6 @@ class CronSendRemindersView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "Provide a non-empty 'recipients' list.",
                             },
                             "data": None,

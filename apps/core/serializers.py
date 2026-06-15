@@ -9,7 +9,7 @@ Shared serializers including:
 
 Every response follows the same shape:
     {
-        "status": { "success": true|false, "code": <int>, "message": "<str>" },
+        "status": { "success": true|false, "message": "<str>" },
         "data":   { ... } | null
     }
 """
@@ -35,15 +35,11 @@ class StatusObjectSerializer(serializers.Serializer):
 
         {
             "success": true | false,
-            "code":    200,
             "message": "Login successful."
         }
     """
     success = serializers.BooleanField(
         help_text="true for 2xx responses, false for 4xx/5xx.",
-    )
-    code = serializers.IntegerField(
-        help_text="Mirrors the HTTP status code.",
     )
     message = serializers.CharField(
         help_text="Human-readable description of the result or error.",
@@ -61,7 +57,7 @@ class SuccessResponseSerializer(serializers.Serializer):
     Shape::
 
         {
-            "status": { "success": true, "code": 200, "message": "Login successful." },
+            "status": { "success": true, "message": "Login successful." },
             "data":   { ... } | null
         }
     """
@@ -79,7 +75,7 @@ class ErrorResponseSerializer(serializers.Serializer):
     Shape::
 
         {
-            "status": { "success": false, "code": 400, "message": "Invalid credentials." },
+            "status": { "success": false, "message": "Invalid credentials." },
             "data":   null
         }
     """
