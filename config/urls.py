@@ -26,7 +26,7 @@ urlpatterns = [
     ),
 
     # TODO: Uncomment routes as each app is implemented
-    # path('api/authors/',       include('apps.authors.urls')),
+    path('api/', include('apps.authors.urls')),
     path('api/', include('apps.categories.urls')),
     path('api/', include('apps.books.urls')),
     path('api/', include('apps.notifications.urls')),
