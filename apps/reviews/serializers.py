@@ -7,7 +7,10 @@ class ReviewSerializer(serializers.ModelSerializer):
     user_name     = serializers.SerializerMethodField()
     user_email    = serializers.EmailField(source='user.email', read_only=True)
     book_title    = serializers.CharField(source='book.title', read_only=True)
-    helpful_count = serializers.IntegerField(read_only=True)
+    helpful_count = serializers.SerializerMethodField()
+
+    def get_helpful_count(self, obj):
+        return obj.helpful_users.count()
     is_helpful    = serializers.SerializerMethodField()
 
     class Meta:
