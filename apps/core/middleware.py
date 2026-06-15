@@ -181,10 +181,27 @@ class ThrottleMiddleware:
 # ============================================================================
 
 _CACHE_EXCLUDED_PATHS = _EXCLUDED_PATHS + [
-    '/user/',    # auth endpoints — never cache
+    '/user/',     # auth endpoints — never cache
+    '/health/',   # liveness probe must always reach the app, never a stale cache
 ]
 
 _WRITE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
+
+
+def _make_etag(response) -> str:
+    """Strong-ish ETag from the response body hash."""
+    digest = hashlib.sha256(getattr(response, 'content', b'')).hexdigest()[:32]
+    return f'"{digest}"'
+
+
+def _not_modified(etag, max_age):
+    """Build a 304 response that preserves caching headers."""
+    from django.http import HttpResponseNotModified
+    resp = HttpResponseNotModified()
+    resp['ETag'] = etag
+    resp['Cache-Control'] = f'public, max-age={max_age}'
+    resp['X-Cache'] = 'HIT'
+    return resp
 
 
 def _cache_key(request) -> str:
@@ -205,7 +222,13 @@ def _cache_key(request) -> str:
 
 
 def _should_cache_request(request) -> bool:
-    """Return True only for anonymous GET requests to non-excluded paths."""
+    """Return True only for anonymous GET requests to cacheable paths.
+
+    A path is cacheable when it is not in the exclude list and — if an include
+    list is configured — it matches one of the include prefixes. The include
+    list keeps personalised/owner-scoped routes (cart, orders, wishlist) off
+    the shared cache by default rather than relying solely on exclusions.
+    """
     if request.method in _WRITE_METHODS:
         return False
     if request.method != 'GET':
@@ -214,7 +237,12 @@ def _should_cache_request(request) -> bool:
         return False
     path = request.path
     excluded = getattr(settings, 'RESPONSE_CACHE_EXCLUDE_PATHS', _CACHE_EXCLUDED_PATHS)
-    return not any(path.startswith(p) for p in excluded)
+    if any(path.startswith(p) for p in excluded):
+        return False
+    included = getattr(settings, 'RESPONSE_CACHE_INCLUDE_PATHS', None)
+    if included:
+        return any(path.startswith(p) for p in included)
+    return True
 
 
 def _should_cache_response(response) -> bool:
@@ -255,10 +283,14 @@ class ResponseCacheMiddleware:
         if not _should_cache_request(request):
             return self.get_response(request)
 
-        alias   = getattr(settings, 'RESPONSE_CACHE_ALIAS', 'response_cache')
+        alias = getattr(settings, 'RESPONSE_CACHE_ALIAS', 'response_cache')
         timeout = getattr(settings, 'RESPONSE_CACHE_TIMEOUT', 900)
-        cache   = caches[alias]
-        key     = _cache_key(request)
+        # Browser/CDN max-age — defaults to the server cache timeout but can be
+        # tuned separately so the edge can hold responses without the origin.
+        max_age = getattr(settings, 'RESPONSE_CACHE_CLIENT_MAX_AGE', timeout)
+        cache = caches[alias]
+        key = _cache_key(request)
+        inm = request.META.get('HTTP_IF_NONE_MATCH')
 
         # ── Cache lookup ──────────────────────────────────────────────────
         try:
@@ -268,6 +300,11 @@ class ResponseCacheMiddleware:
             cached = None
 
         if cached is not None:
+            etag = cached.get('ETag')
+            # Conditional request — client already has this exact body.
+            if inm and etag and inm == etag:
+                logger.debug('Cache 304  %s', request.path)
+                return _not_modified(etag, max_age)
             logger.debug('Cache HIT  %s', request.path)
             cached['X-Cache'] = 'HIT'
             return cached
@@ -279,10 +316,19 @@ class ResponseCacheMiddleware:
 
         # ── Store on the way out ──────────────────────────────────────────
         if _should_cache_response(response):
+            # Tag the response so browsers and the CDN can cache it and
+            # revalidate cheaply with If-None-Match on expiry.
+            etag = _make_etag(response)
+            response['ETag'] = etag
+            response['Cache-Control'] = f'public, max-age={max_age}'
             try:
                 cache.set(key, response, timeout)
             except Exception as exc:
                 logger.warning('ResponseCacheMiddleware: cache.set failed — %s', exc)
+
+            # Honour the conditional request on the very first MISS too.
+            if inm and inm == etag:
+                return _not_modified(etag, max_age)
 
         response['X-Cache'] = 'MISS'
         return response
