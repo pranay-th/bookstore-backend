@@ -8,6 +8,8 @@ Endpoints:
 import logging
 from urllib.parse import quote
 
+import httpx
+from django.core.cache import cache
 from django.db.models import Count
 from django.db.models.functions import Trim
 from drf_spectacular.utils import (
@@ -26,19 +28,65 @@ from apps.core.serializers import SuccessResponseSerializer
 
 logger = logging.getLogger(__name__)
 
+OL_AUTHOR_SEARCH_URL = "https://openlibrary.org/search/authors.json"
+# Cache resolved Open Library images for a week. We store "" to remember a
+# negative result (no author / no photo) so we don't hammer the API.
+_OL_IMAGE_CACHE_TTL = 60 * 60 * 24 * 7
+
 
 def build_author_image(name):
     """Build a deterministic avatar URL for an author name.
 
-    There is no stored author photo, so we generate a stable initials-based
-    avatar (the background colour is derived from the name, so it never changes
-    between requests).
+    Used as a fallback when no real Open Library photo is available, so the UI
+    always has something to show. The background colour is derived from the
+    name, so the avatar is stable between requests.
     """
     encoded = quote(name or "Author")
     return (
         f"https://ui-avatars.com/api/?name={encoded}"
         "&size=256&background=random&bold=true&format=png"
     )
+
+
+def resolve_openlibrary_author_image(name):
+    """Resolve an author's real photo URL from Open Library, or None.
+
+    Looks the author up by name via the Open Library author search, picks the
+    match with the most works (most likely the real author), and builds the
+    cover URL. ``?default=false`` makes the cover endpoint return 404 when the
+    author has no photo, so the client can fall back to a generated avatar.
+
+    Results (including misses) are cached to avoid repeated external calls.
+    """
+    name = (name or "").strip()
+    if not name:
+        return None
+
+    cache_key = f"author_ol_image:{name.lower()}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached or None  # "" means "looked up, no photo"
+
+    image = None
+    try:
+        resp = httpx.get(
+            OL_AUTHOR_SEARCH_URL,
+            params={"q": name, "limit": 5},
+            timeout=6,
+        )
+        resp.raise_for_status()
+        docs = [d for d in (resp.json().get("docs") or []) if d.get("key")]
+        if docs:
+            best = max(docs, key=lambda d: d.get("work_count") or 0)
+            olid = best["key"]
+            image = (
+                f"https://covers.openlibrary.org/a/olid/{olid}-M.jpg?default=false"
+            )
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as exc:
+        logger.warning("Open Library image lookup failed for %r: %s", name, exc)
+
+    cache.set(cache_key, image or "", _OL_IMAGE_CACHE_TTL)
+    return image
 
 
 def build_author_bio(name, books):
@@ -203,11 +251,68 @@ def author_books(request, author_name):
         data={
             "author": {
                 "name": author_name,
-                "image": build_author_image(author_name),
+                "image": (
+                    resolve_openlibrary_author_image(author_name)
+                    or build_author_image(author_name)
+                ),
                 "bio": build_author_bio(author_name, books),
                 "book_count": len(books),
             },
             "books": serializer.data,
         },
         message=f"Books by {author_name} retrieved.",
+    )
+
+
+@extend_schema(
+    summary="Resolve an author's photo",
+    description=(
+        "Returns the best available image URL for an author name.\n\n"
+        "Tries to find a real author photo on Open Library; if none exists, "
+        "falls back to a generated initials avatar. Designed to be called "
+        "lazily per author card so the authors list stays fast."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="name",
+            description="Author name to resolve an image for",
+            required=True,
+            type=str,
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(
+            response=SuccessResponseSerializer,
+            description="Resolved author image",
+            examples=[
+                OpenApiExample(
+                    "Author image",
+                    value={
+                        "status": {"success": True, "message": "Author image resolved."},
+                        "data": {
+                            "name": "J. K. Rowling",
+                            "image": "https://covers.openlibrary.org/a/olid/OL23919A-M.jpg?default=false",
+                            "source": "openlibrary",
+                        },
+                    },
+                    response_only=True,
+                ),
+            ],
+        ),
+    },
+)
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def author_image(request):
+    """Resolve a single author's photo (Open Library, with avatar fallback)."""
+    name = request.query_params.get("name", "").strip()
+
+    ol_image = resolve_openlibrary_author_image(name)
+    return success_response(
+        data={
+            "name": name,
+            "image": ol_image or build_author_image(name),
+            "source": "openlibrary" if ol_image else "avatar",
+        },
+        message="Author image resolved.",
     )
