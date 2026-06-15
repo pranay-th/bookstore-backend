@@ -6,6 +6,7 @@ Endpoints:
   GET /api/authors/<name>/books/   Get books by a specific author
 """
 import logging
+from urllib.parse import quote
 
 from django.db.models import Count
 from django.db.models.functions import Trim
@@ -24,6 +25,51 @@ from apps.core.responses import success_response
 from apps.core.serializers import SuccessResponseSerializer
 
 logger = logging.getLogger(__name__)
+
+
+def build_author_image(name):
+    """Build a deterministic avatar URL for an author name.
+
+    There is no stored author photo, so we generate a stable initials-based
+    avatar (the background colour is derived from the name, so it never changes
+    between requests).
+    """
+    encoded = quote(name or "Author")
+    return (
+        f"https://ui-avatars.com/api/?name={encoded}"
+        "&size=256&background=random&bold=true&format=png"
+    )
+
+
+def build_author_bio(name, books):
+    """Compose an "about the author" summary from their actual catalogue.
+
+    We have no real biography data, so we describe the author using facts we do
+    have: how many books they have, the years they span, and the languages.
+    """
+    count = len(books)
+    if count == 0:
+        return f"{name} does not have any books in our catalogue yet."
+
+    years = sorted(b.published_year for b in books if b.published_year)
+    languages = sorted({b.language for b in books if b.language})
+
+    book_word = "book" if count == 1 else "books"
+    parts = [f"{name} has {count} {book_word} in our catalogue"]
+
+    if years:
+        if years[0] == years[-1]:
+            parts.append(f"published in {years[0]}")
+        else:
+            parts.append(f"published between {years[0]} and {years[-1]}")
+
+    sentence = " ".join(parts) + "."
+
+    if languages:
+        lang_list = ", ".join(languages[:5])
+        sentence += f" Their work is available in: {lang_list}."
+
+    return sentence
 
 
 @extend_schema(
@@ -54,8 +100,8 @@ logger = logging.getLogger(__name__)
                             "message": "Authors retrieved.",
                         },
                         "data": [
-                            {"name": "J.K. Rowling", "book_count": 12},
-                            {"name": "Stephen King", "book_count": 8},
+                            {"name": "J.K. Rowling", "book_count": 12, "image": "https://ui-avatars.com/api/?name=J.K.%20Rowling"},
+                            {"name": "Stephen King", "book_count": 8, "image": "https://ui-avatars.com/api/?name=Stephen%20King"},
                         ],
                     },
                     response_only=True,
@@ -83,7 +129,11 @@ def list_authors(request):
         queryset = queryset.filter(trimmed_author__icontains=search)
 
     authors = [
-        {"name": entry["trimmed_author"], "book_count": entry["book_count"]}
+        {
+            "name": entry["trimmed_author"],
+            "book_count": entry["book_count"],
+            "image": build_author_image(entry["trimmed_author"]),
+        }
         for entry in queryset[:200]  # Cap at 200 for performance
     ]
 
@@ -115,7 +165,12 @@ def list_authors(request):
                             "message": "Books by J.K. Rowling retrieved.",
                         },
                         "data": {
-                            "author": "J.K. Rowling",
+                            "author": {
+                                "name": "J.K. Rowling",
+                                "image": "https://ui-avatars.com/api/?name=J.K.%20Rowling",
+                                "bio": "J.K. Rowling has 12 books in our catalogue published between 1997 and 2016.",
+                                "book_count": 12,
+                            },
                             "books": [
                                 {
                                     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
@@ -135,16 +190,23 @@ def list_authors(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def author_books(request, author_name):
-    """Get all books by a specific author."""
-    books = Book.objects.filter(
-        is_active=True,
-        author__icontains=author_name,
+    """Get all books by a specific author, plus author image and bio."""
+    books = list(
+        Book.objects.filter(
+            is_active=True,
+            author__icontains=author_name,
+        )
     )
 
     serializer = BookSerializer(books, many=True)
     return success_response(
         data={
-            "author": author_name,
+            "author": {
+                "name": author_name,
+                "image": build_author_image(author_name),
+                "bio": build_author_bio(author_name, books),
+                "book_count": len(books),
+            },
             "books": serializer.data,
         },
         message=f"Books by {author_name} retrieved.",
