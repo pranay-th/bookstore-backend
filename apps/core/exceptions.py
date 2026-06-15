@@ -5,7 +5,7 @@ Global DRF exception handler + custom exception classes.
 
 Every error response follows the standard envelope:
     {
-        "status": { "success": false, "code": <int>, "message": "<str>" },
+        "status": { "success": false, "message": "<str>" },
         "data":   null
     }
 
@@ -194,7 +194,6 @@ def custom_exception_handler(exc, context):
     response.data = {
         "status": {
             "success": False,
-            "code": http_code,
             "message": message,
         },
         "data": None,

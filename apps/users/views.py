@@ -87,7 +87,6 @@ class SignupView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 201,
                                 "message": "Registration successful. Please check your email to verify your account.",
                             },
                             "data": {
@@ -110,7 +109,6 @@ class SignupView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "email: An account with this email already exists.",
                             },
                             "data": None,
@@ -122,7 +120,6 @@ class SignupView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "password: Password must contain at least one uppercase letter.",
                             },
                             "data": None,
@@ -134,7 +131,6 @@ class SignupView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "email: This field is required. | password: This field is required.",
                             },
                             "data": None,
@@ -214,7 +210,6 @@ class ResendVerificationView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 200,
                                 "message": "Verification email sent. Please check your inbox.",
                             },
                             "data": None,
@@ -232,7 +227,6 @@ class ResendVerificationView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "This email address has already been verified.",
                             },
                             "data": None,
@@ -250,7 +244,6 @@ class ResendVerificationView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 503,
                                 "message": "Email could not be sent. Please try again later.",
                             },
                             "data": None,
@@ -328,7 +321,6 @@ class VerifyEmailView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 200,
                                 "message": "Email verified successfully. You can now log in.",
                             },
                             "data": {"email": "cu****er@example.com"},
@@ -346,7 +338,6 @@ class VerifyEmailView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "Verification link has expired or is invalid.",
                             },
                             "data": None,
@@ -358,7 +349,6 @@ class VerifyEmailView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "This email address has already been verified.",
                             },
                             "data": None,
@@ -424,7 +414,6 @@ class LoginView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 200,
                                 "message": "OTP sent to ru****93@gmail.com. Enter it to complete login.",
                             },
                             "data": {"email": "ru****93@gmail.com"},
@@ -442,7 +431,6 @@ class LoginView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "Invalid email or password.",
                             },
                             "data": None,
@@ -460,7 +448,6 @@ class LoginView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 403,
                                 "message": "Email not verified. Please check your inbox for the verification link.",
                             },
                             "data": None,
@@ -472,7 +459,6 @@ class LoginView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 403,
                                 "message": "This account has been disabled. Please contact support.",
                             },
                             "data": None,
@@ -490,7 +476,6 @@ class LoginView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 503,
                                 "message": "Could not send OTP email. Please try again in a moment.",
                             },
                             "data": None,
@@ -553,7 +538,6 @@ class VerifyOTPView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 200,
                                 "message": "Login successful.",
                             },
                             "data": {
@@ -580,7 +564,6 @@ class VerifyOTPView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "Invalid or expired OTP.",
                             },
                             "data": None,
@@ -598,7 +581,6 @@ class VerifyOTPView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 503,
                                 "message": "OTP service is temporarily unavailable. Please try again.",
                             },
                             "data": None,
@@ -670,7 +652,6 @@ class RefreshTokenView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 200,
                                 "message": "Access token refreshed.",
                             },
                             "data": {"access": "<new-jwt-access-token>"},
@@ -688,7 +669,6 @@ class RefreshTokenView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "refresh: This field is required.",
                             },
                             "data": None,
@@ -706,7 +686,6 @@ class RefreshTokenView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 401,
                                 "message": "Token is invalid or expired.",
                             },
                             "data": None,
@@ -773,7 +752,6 @@ class CronSendRemindersView(APIView):
                         value={
                             "status": {
                                 "success": True,
-                                "code": 200,
                                 "message": "3 reminder(s) sent, 0 failed.",
                             },
                             "data": {"sent": 3, "failed": 0},
@@ -791,7 +769,6 @@ class CronSendRemindersView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 401,
                                 "message": "Unauthorized.",
                             },
                             "data": None,
@@ -809,7 +786,6 @@ class CronSendRemindersView(APIView):
                         value={
                             "status": {
                                 "success": False,
-                                "code": 400,
                                 "message": "Provide a non-empty 'recipients' list.",
                             },
                             "data": None,
