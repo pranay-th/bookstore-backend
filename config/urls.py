@@ -29,6 +29,7 @@ urlpatterns = [
     # path('api/authors/',       include('apps.authors.urls')),
     path('api/', include('apps.categories.urls')),
     path('api/', include('apps.books.urls')),
+    path('api/', include('apps.books.author_urls')),
     path('api/', include('apps.notifications.urls')),
     path('api/', include('apps.cart.urls')),
     path('api/', include('apps.reviews.urls')),
