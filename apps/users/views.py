@@ -34,6 +34,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.core.exceptions import ServiceUnavailableError
 from apps.core.responses import error_response, success_response
 from apps.core.serializers import ErrorResponseSerializer, SuccessResponseSerializer
+from apps.core.throttles import (
+    LoginThrottle,
+    OTPGenerationThrottle,
+    OTPVerificationThrottle,
+    PasswordResetThrottle,
+    ResendVerificationThrottle,
+    SignupThrottle,
+)
 from apps.core.utils import mask_email
 
 from .emails import send_verification_email
@@ -56,6 +64,7 @@ logger = logging.getLogger(__name__)
 
 class SignupView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [SignupThrottle]
 
     @extend_schema(
         summary="Register a new user",
@@ -184,6 +193,7 @@ class SignupView(APIView):
 
 class ResendVerificationView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ResendVerificationThrottle]
 
     @extend_schema(
         summary="Resend email verification link",
@@ -297,6 +307,7 @@ class ResendVerificationView(APIView):
 
 class VerifyEmailView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = []  # No throttle — link-based, one-time use tokens
 
     @extend_schema(
         summary="Verify email address",
@@ -388,6 +399,7 @@ class VerifyEmailView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [LoginThrottle, OTPGenerationThrottle]
 
     @extend_schema(
         summary="Login — step 1 (credentials)",
@@ -518,6 +530,7 @@ class LoginView(APIView):
 
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [OTPVerificationThrottle]
 
     @extend_schema(
         summary="Login — step 2 (OTP → JWT tokens)",
@@ -635,6 +648,7 @@ class VerifyOTPView(APIView):
 
 class RefreshTokenView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = []  # No throttle — JWT refresh has its own expiry mechanism
 
     @extend_schema(
         summary="Refresh JWT access token",
@@ -735,6 +749,7 @@ class RefreshTokenView(APIView):
 
 class CronSendRemindersView(APIView):
     permission_classes = [AllowAny]  # Auth via X-Cron-Secret header
+    throttle_classes = []  # Secured via secret key, not throttled
 
     @extend_schema(
         summary="Cron — send scheduled reminder emails",
