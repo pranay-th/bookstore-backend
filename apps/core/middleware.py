@@ -268,3 +268,89 @@ class ThrottleMiddleware:
         if self._redis is None:
             self._redis = _get_redis_client()
         return self._redis
+
+
+# ===========================================================================
+# Response Cache Middleware
+# ===========================================================================
+"""
+ResponseCacheMiddleware
+
+Caches anonymous GET responses at the middleware layer using Django's cache
+framework (backed by Redis when available).
+
+Why middleware-level caching?
+    - Intercepts the request before it hits the view, so cached responses
+      are served without touching the database at all.
+    - Complements per-view DRF caching — this is a broad catch-all layer.
+
+Architecture:
+    Request
+        │
+        ▼
+    ThrottleMiddleware      ← rate-limit check (existing)
+        │
+        ▼
+    ResponseCacheMiddleware ← cache lookup (new)
+        │ HIT → return cached response immediately
+        │ MISS ↓
+        ▼
+    DRF View + DB
+        │
+        ▼
+    ResponseCacheMiddleware ← store response in cache on the way out
+
+Rules — a request/response is cached ONLY when ALL of:
+    ✓ RESPONSE_CACHE_ENABLED = True (default)
+    ✓ HTTP method is GET
+    ✓ User is NOT authenticated
+    ✓ Path is not in the exclusion list
+    ✓ Response status is 200
+    ✓ Response body ≤ RESPONSE_CACHE_MAX_SIZE (default 1 MB)
+    ✓ Response Cache-Control is not 'no-store' or 'private'
+
+Cache key format (see cache_utils.build_cache_key):
+    response_cache:GET:<path>:<sha256_of_sorted_qs[:24]>
+
+Configuration (settings.py / .env):
+    RESPONSE_CACHE_ENABLED       bool   default True
+    RESPONSE_CACHE_TIMEOUT       int    default 900  (15 minutes)
+    RESPONSE_CACHE_ALIAS         str    default 'response_cache'
+    RESPONSE_CACHE_MAX_SIZE      int    default 1_048_576 (1 MB)
+    RESPONSE_CACHE_INCLUDE_PATHS list   optional allowlist
+    RESPONSE_CACHE_EXCLUDE_PATHS list   optional extra exclusions
+
+Registration (settings.MIDDLEWARE — after AuthenticationMiddleware):
+    'apps.core.middleware.ResponseCacheMiddleware',
+"""
+
+from apps.core.cache_utils import get_cached_response, cache_response
+
+
+class ResponseCacheMiddleware:
+    """
+    Middleware that serves and stores anonymous GET response caches.
+
+    Must be placed AFTER AuthenticationMiddleware in MIDDLEWARE so that
+    request.user is populated before the cache skip check runs.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        # ── Try cache first ───────────────────────────────────────────────
+        cached = get_cached_response(request)
+        if cached is not None:
+            # Add a header so clients and load balancers can see it was a hit
+            cached['X-Cache'] = 'HIT'
+            return cached
+
+        # ── Cache miss — call the view ────────────────────────────────────
+        response = self.get_response(request)
+
+        # ── Store the response on the way out ─────────────────────────────
+        cache_response(request, response)
+        response['X-Cache'] = 'MISS'
+
+        return response
