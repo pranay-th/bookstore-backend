@@ -1,68 +1,30 @@
 """
 apps/core/middleware.py
 
-Throttle middleware for the Bookstore API.
+Two middleware classes for the Bookstore API:
 
-This middleware applies IP-level rate limiting at the Django layer —
-before requests even reach DRF views. It acts as a first line of
-defense, complementing the per-view DRF throttle classes in throttles.py.
+  1. ThrottleMiddleware       — IP-level rate limiting via Redis
+  2. ResponseCacheMiddleware  — Cache anonymous GET responses via Django cache
 
-Why middleware AND per-view throttles?
-    - Middleware blocks at the WSGI/ASGI layer — cheaper, catches all paths
-      including non-DRF routes (admin, static, etc. are excluded below).
-    - Per-view DRF throttles provide fine-grained control per endpoint.
-
-Architecture:
-    Request
-        │
-        ▼
-    ThrottleMiddleware  ← global IP-level guard (1000/day anon, 10000/day auth)
-        │
-        ▼
-    DRF View
-        │
-        ▼
-    Per-view throttle  ← endpoint-specific guard (e.g. 20/min for login)
-
-Redis key format:
-    throttle:middleware:<user_id|ip>
-
-Configuration:
-    Add to settings.MIDDLEWARE (must come AFTER AuthenticationMiddleware
-    so request.user is populated):
-
-        'apps.core.middleware.ThrottleMiddleware',
-
-    Optional settings (override in base.py / environment):
-        MIDDLEWARE_THROTTLE_ANON_RATE     default: '1000/day'
-        MIDDLEWARE_THROTTLE_AUTH_RATE     default: '10000/day'
-        MIDDLEWARE_THROTTLE_ENABLED       default: True
-
-Excluded paths (configurable via MIDDLEWARE_THROTTLE_EXCLUDED_PATHS):
-    /admin/, /static/, /media/, /schema/, /swagger/, /redoc/
-
-Response on limit exceeded:
-    HTTP 429 — standard envelope via apps.core.exceptions handler
+Both classes live here to keep the middleware layer in one place.
 """
 
-import json
+import hashlib
 import logging
-import time
+import urllib.parse
 
 from django.conf import settings
+from django.core.cache import caches
 from django.http import JsonResponse
 
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Defaults
-# ---------------------------------------------------------------------------
+# ============================================================================
+# Shared helpers
+# ============================================================================
 
-_DEFAULT_ANON_RATE = '1000/day'
-_DEFAULT_AUTH_RATE = '10000/day'
-
-_EXCLUDED_PATH_PREFIXES = [
+_EXCLUDED_PATHS = [
     '/admin/',
     '/static/',
     '/media/',
@@ -75,45 +37,39 @@ _EXCLUDED_PATH_PREFIXES = [
 _PERIOD_SECONDS = {
     'second': 1,
     'minute': 60,
-    'hour': 3600,
-    'day': 86400,
+    'hour':   3600,
+    'day':    86400,
 }
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+def _get_client_ip(request) -> str:
+    """Return the real client IP, honouring X-Forwarded-For."""
+    xff = request.META.get('HTTP_X_FORWARDED_FOR')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR', '0.0.0.0')
+
 
 def _parse_rate(rate_string: str) -> tuple[int, int]:
     """
-    Parse a DRF-style rate string into (num_requests, period_seconds).
-
-    Examples:
-        '1000/day'   → (1000, 86400)
-        '20/minute'  → (20, 60)
-        '300/hour'   → (300, 3600)
-
-    Raises:
-        ValueError if the format is unrecognised.
+    Parse '20/minute' → (20, 60).  Raises ValueError on bad input.
     """
     try:
         count_str, period = rate_string.split('/')
         count = int(count_str.strip())
-        period = period.strip().rstrip('s')  # allow 'minutes' or 'minute'
-        # Normalise plural
-        period = period.rstrip('s') if period.endswith('s') and period != 'seconds' else period
+        period = period.strip().rstrip('s')
         seconds = _PERIOD_SECONDS.get(period)
         if seconds is None:
             raise ValueError(f"Unknown period '{period}'")
         return count, seconds
     except Exception as exc:
-        raise ValueError(f"Invalid throttle rate '{rate_string}': {exc}") from exc
+        raise ValueError(f"Invalid rate '{rate_string}': {exc}") from exc
 
 
-def _get_redis_client():
-    """Return a Redis client using the project's REDIS_URL setting."""
-    import redis as redis_lib
-    return redis_lib.from_url(
+def _get_redis():
+    """Return a short-timeout Redis client from the project REDIS_URL."""
+    import redis as _redis
+    return _redis.from_url(
         getattr(settings, 'REDIS_URL', 'redis://localhost:6379'),
         decode_responses=True,
         socket_connect_timeout=1,
@@ -121,236 +77,239 @@ def _get_redis_client():
     )
 
 
-def _get_client_ip(request) -> str:
-    """
-    Extract the real client IP, respecting X-Forwarded-For on Render/Vercel.
-    Always returns a non-empty string.
-    """
-    xff = request.META.get('HTTP_X_FORWARDED_FOR')
-    if xff:
-        return xff.split(',')[0].strip()
-    return request.META.get('REMOTE_ADDR', '0.0.0.0')
-
-
-def _make_throttle_response(detail: str = 'Too many requests. Please slow down.') -> JsonResponse:
-    """Return a 429 JSON response in the project's standard envelope."""
-    body = {
-        'status': {
-            'success': False,
-            'code': 429,
-            'message': detail,
-        },
-        'data': None,
-    }
-    response = JsonResponse(body, status=429)
-    response['Retry-After'] = '60'
-    return response
-
-
-# ---------------------------------------------------------------------------
-# Middleware class
-# ---------------------------------------------------------------------------
+# ============================================================================
+# 1. ThrottleMiddleware
+# ============================================================================
 
 class ThrottleMiddleware:
     """
-    Middleware that enforces global IP-level request rate limits using Redis.
+    Global IP-level rate limiter using Redis.
 
-    Applies before DRF view throttles as a broad first-line defence.
-    Fine-grained per-endpoint throttling is handled by the DRF throttle
-    classes in apps.core.throttles.
+    Runs before the view — cheap and catches all paths.
+    Fine-grained per-endpoint limits are handled by DRF throttle classes.
 
-    Configuration (all optional — set in settings.py or .env):
-        MIDDLEWARE_THROTTLE_ENABLED (bool, default True)
-        MIDDLEWARE_THROTTLE_ANON_RATE (str, default '1000/day')
-        MIDDLEWARE_THROTTLE_AUTH_RATE (str, default '10000/day')
-        MIDDLEWARE_THROTTLE_EXCLUDED_PATHS (list[str])
+    Settings (all optional):
+        MIDDLEWARE_THROTTLE_ENABLED   bool   default True
+        MIDDLEWARE_THROTTLE_ANON_RATE str    default '1000/day'
+        MIDDLEWARE_THROTTLE_AUTH_RATE str    default '10000/day'
+
+    Must be placed AFTER AuthenticationMiddleware in settings.MIDDLEWARE.
     """
 
     def __init__(self, get_response):
         self.get_response = get_response
-        self._redis = None  # lazily initialised
+        self._redis = None
 
-        # Parse rates once at startup
-        anon_rate = getattr(settings, 'MIDDLEWARE_THROTTLE_ANON_RATE', _DEFAULT_ANON_RATE)
-        auth_rate = getattr(settings, 'MIDDLEWARE_THROTTLE_AUTH_RATE', _DEFAULT_AUTH_RATE)
+        anon_rate = getattr(settings, 'MIDDLEWARE_THROTTLE_ANON_RATE', '1000/day')
+        auth_rate = getattr(settings, 'MIDDLEWARE_THROTTLE_AUTH_RATE', '10000/day')
 
         try:
             self.anon_limit, self.anon_period = _parse_rate(anon_rate)
             self.auth_limit, self.auth_period = _parse_rate(auth_rate)
         except ValueError as exc:
-            logger.error('ThrottleMiddleware: bad rate config — %s. Throttling disabled.', exc)
+            logger.error('ThrottleMiddleware: bad config — %s. Throttling disabled.', exc)
             self.anon_limit = self.auth_limit = None
 
-        self.excluded_prefixes = (
-            getattr(settings, 'MIDDLEWARE_THROTTLE_EXCLUDED_PATHS', None)
-            or _EXCLUDED_PATH_PREFIXES
-        )
-
-    # ── Public interface ──────────────────────────────────────────────────
-
     def __call__(self, request):
-        if self._should_skip(request):
+        if self._is_excluded(request):
             return self.get_response(request)
 
         if not getattr(settings, 'MIDDLEWARE_THROTTLE_ENABLED', True):
             return self.get_response(request)
 
         if self.anon_limit is None:
-            # Config error — fail open
             return self.get_response(request)
 
-        throttled, detail = self._check_throttle(request)
+        throttled, detail = self._check(request)
         if throttled:
             logger.warning(
-                'ThrottleMiddleware: 429 for %s on %s',
-                _get_client_ip(request),
-                request.path,
+                'ThrottleMiddleware: 429 — %s on %s',
+                _get_client_ip(request), request.path,
             )
-            return _make_throttle_response(detail)
+            return self._429(detail)
 
         return self.get_response(request)
 
-    # ── Internals ─────────────────────────────────────────────────────────
-
-    def _should_skip(self, request) -> bool:
-        """Return True for paths that should never be throttled."""
+    def _is_excluded(self, request) -> bool:
         path = request.path
-        return any(path.startswith(prefix) for prefix in self.excluded_prefixes)
+        excluded = getattr(settings, 'MIDDLEWARE_THROTTLE_EXCLUDED_PATHS', _EXCLUDED_PATHS)
+        return any(path.startswith(p) for p in excluded)
 
-    def _check_throttle(self, request) -> tuple[bool, str]:
-        """
-        Increment the Redis counter for this client and check against the limit.
-
-        Returns (throttled: bool, detail_message: str).
-        Uses a sliding-window approach: key expires after the full period,
-        so the window resets naturally.
-        """
+    def _check(self, request) -> tuple[bool, str]:
         is_auth = hasattr(request, 'user') and request.user.is_authenticated
-
         if is_auth:
-            ident = f'user:{request.user.id}'
-            limit = self.auth_limit
+            ident  = f'user:{request.user.id}'
+            limit  = self.auth_limit
             period = self.auth_period
         else:
-            ident = f'ip:{_get_client_ip(request)}'
-            limit = self.anon_limit
+            ident  = f'ip:{_get_client_ip(request)}'
+            limit  = self.anon_limit
             period = self.anon_period
 
-        cache_key = f'throttle:middleware:{ident}'
-
+        key = f'throttle:middleware:{ident}'
         try:
-            redis = self._get_redis()
-            current = redis.incr(cache_key)
-            if current == 1:
-                # First request in this window — set the expiry
-                redis.expire(cache_key, period)
-
-            if current > limit:
-                ttl = redis.ttl(cache_key)
-                detail = (
-                    f'Rate limit exceeded. You have sent {current} requests '
-                    f'in the current window (limit: {limit}). '
-                    f'Try again in {ttl} seconds.'
+            redis = self._redis or _get_redis()
+            self._redis = redis
+            count = redis.incr(key)
+            if count == 1:
+                redis.expire(key, period)
+            if count > limit:
+                ttl = redis.ttl(key)
+                return True, (
+                    f'Rate limit exceeded ({count}/{limit}). '
+                    f'Try again in {ttl}s.'
                 )
-                return True, detail
-
         except Exception as exc:
-            # Redis unavailable — fail open so the API stays usable
-            logger.warning(
-                'ThrottleMiddleware: Redis error (%s) — failing open for %s',
-                exc, ident,
-            )
+            logger.warning('ThrottleMiddleware: Redis error — failing open. %s', exc)
 
         return False, ''
 
-    def _get_redis(self):
-        """Lazily create and cache the Redis client."""
-        if self._redis is None:
-            self._redis = _get_redis_client()
-        return self._redis
+    @staticmethod
+    def _429(detail: str) -> JsonResponse:
+        return JsonResponse(
+            {
+                'status': {'success': False, 'code': 429, 'message': detail},
+                'data':   None,
+            },
+            status=429,
+            headers={'Retry-After': '60'},
+        )
 
 
-# ===========================================================================
-# Response Cache Middleware
-# ===========================================================================
-"""
-ResponseCacheMiddleware
+# ============================================================================
+# 2. ResponseCacheMiddleware
+# ============================================================================
 
-Caches anonymous GET responses at the middleware layer using Django's cache
-framework (backed by Redis when available).
+_CACHE_EXCLUDED_PATHS = _EXCLUDED_PATHS + [
+    '/user/',    # auth endpoints — never cache
+]
 
-Why middleware-level caching?
-    - Intercepts the request before it hits the view, so cached responses
-      are served without touching the database at all.
-    - Complements per-view DRF caching — this is a broad catch-all layer.
+_WRITE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
 
-Architecture:
-    Request
-        │
-        ▼
-    ThrottleMiddleware      ← rate-limit check (existing)
-        │
-        ▼
-    ResponseCacheMiddleware ← cache lookup (new)
-        │ HIT → return cached response immediately
-        │ MISS ↓
-        ▼
-    DRF View + DB
-        │
-        ▼
-    ResponseCacheMiddleware ← store response in cache on the way out
 
-Rules — a request/response is cached ONLY when ALL of:
-    ✓ RESPONSE_CACHE_ENABLED = True (default)
-    ✓ HTTP method is GET
-    ✓ User is NOT authenticated
-    ✓ Path is not in the exclusion list
-    ✓ Response status is 200
-    ✓ Response body ≤ RESPONSE_CACHE_MAX_SIZE (default 1 MB)
-    ✓ Response Cache-Control is not 'no-store' or 'private'
+def _cache_key(request) -> str:
+    """
+    Build a short, deterministic cache key from path + sorted query params.
+    Format: rc:GET:<path>:<first16_of_sha256>
+    """
+    raw_qs = request.META.get('QUERY_STRING', '')
+    if raw_qs:
+        sorted_qs = urllib.parse.urlencode(
+            sorted(urllib.parse.parse_qsl(raw_qs))
+        )
+    else:
+        sorted_qs = ''
 
-Cache key format (see cache_utils.build_cache_key):
-    response_cache:GET:<path>:<sha256_of_sorted_qs[:24]>
+    digest = hashlib.sha256(f'{request.path}:{sorted_qs}'.encode()).hexdigest()[:16]
+    return f'rc:GET:{request.path}:{digest}'
 
-Configuration (settings.py / .env):
-    RESPONSE_CACHE_ENABLED       bool   default True
-    RESPONSE_CACHE_TIMEOUT       int    default 900  (15 minutes)
-    RESPONSE_CACHE_ALIAS         str    default 'response_cache'
-    RESPONSE_CACHE_MAX_SIZE      int    default 1_048_576 (1 MB)
-    RESPONSE_CACHE_INCLUDE_PATHS list   optional allowlist
-    RESPONSE_CACHE_EXCLUDE_PATHS list   optional extra exclusions
 
-Registration (settings.MIDDLEWARE — after AuthenticationMiddleware):
-    'apps.core.middleware.ResponseCacheMiddleware',
-"""
+def _should_cache_request(request) -> bool:
+    """Return True only for anonymous GET requests to non-excluded paths."""
+    if request.method in _WRITE_METHODS:
+        return False
+    if request.method != 'GET':
+        return False
+    if hasattr(request, 'user') and request.user.is_authenticated:
+        return False
+    path = request.path
+    excluded = getattr(settings, 'RESPONSE_CACHE_EXCLUDE_PATHS', _CACHE_EXCLUDED_PATHS)
+    return not any(path.startswith(p) for p in excluded)
 
-from apps.core.cache_utils import get_cached_response, cache_response
+
+def _should_cache_response(response) -> bool:
+    """Return True only for 200 responses under the size limit."""
+    if response.status_code != 200:
+        return False
+    cc = response.get('Cache-Control', '')
+    if 'no-store' in cc or 'private' in cc:
+        return False
+    max_size = getattr(settings, 'RESPONSE_CACHE_MAX_SIZE', 1_048_576)  # 1 MB
+    return len(getattr(response, 'content', b'')) <= max_size
 
 
 class ResponseCacheMiddleware:
     """
-    Middleware that serves and stores anonymous GET response caches.
+    Caches anonymous GET responses using Django's cache framework.
 
-    Must be placed AFTER AuthenticationMiddleware in MIDDLEWARE so that
-    request.user is populated before the cache skip check runs.
+    On a HIT  — serves the cached response immediately (no view/DB hit).
+    On a MISS — calls the view, stores the response, returns it.
+
+    Settings (all optional):
+        RESPONSE_CACHE_ENABLED       bool   default True
+        RESPONSE_CACHE_TIMEOUT       int    default 900  (15 min)
+        RESPONSE_CACHE_ALIAS         str    default 'response_cache'
+        RESPONSE_CACHE_MAX_SIZE      int    default 1_048_576 (1 MB)
+        RESPONSE_CACHE_EXCLUDE_PATHS list   additional excluded prefixes
+
+    Must be placed AFTER ThrottleMiddleware in settings.MIDDLEWARE.
     """
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        # ── Try cache first ───────────────────────────────────────────────
-        cached = get_cached_response(request)
+        if not getattr(settings, 'RESPONSE_CACHE_ENABLED', True):
+            return self.get_response(request)
+
+        if not _should_cache_request(request):
+            return self.get_response(request)
+
+        alias   = getattr(settings, 'RESPONSE_CACHE_ALIAS', 'response_cache')
+        timeout = getattr(settings, 'RESPONSE_CACHE_TIMEOUT', 900)
+        cache   = caches[alias]
+        key     = _cache_key(request)
+
+        # ── Cache lookup ──────────────────────────────────────────────────
+        try:
+            cached = cache.get(key)
+        except Exception as exc:
+            logger.warning('ResponseCacheMiddleware: cache.get failed — %s', exc)
+            cached = None
+
         if cached is not None:
-            # Add a header so clients and load balancers can see it was a hit
+            logger.debug('Cache HIT  %s', request.path)
             cached['X-Cache'] = 'HIT'
             return cached
 
-        # ── Cache miss — call the view ────────────────────────────────────
+        logger.debug('Cache MISS %s', request.path)
+
+        # ── Call the view ─────────────────────────────────────────────────
         response = self.get_response(request)
 
-        # ── Store the response on the way out ─────────────────────────────
-        cache_response(request, response)
-        response['X-Cache'] = 'MISS'
+        # ── Store on the way out ──────────────────────────────────────────
+        if _should_cache_response(response):
+            try:
+                cache.set(key, response, timeout)
+            except Exception as exc:
+                logger.warning('ResponseCacheMiddleware: cache.set failed — %s', exc)
 
+        response['X-Cache'] = 'MISS'
         return response
+
+    # ── Cache invalidation ────────────────────────────────────────────────
+
+    @staticmethod
+    def invalidate(path: str) -> None:
+        """
+        Delete the cached response for a path (no query string).
+        Call this after any write that changes the resource at `path`.
+
+        Usage:
+            ResponseCacheMiddleware.invalidate('/api/books/')
+        """
+        alias = getattr(settings, 'RESPONSE_CACHE_ALIAS', 'response_cache')
+
+        class _Req:
+            method = 'GET'
+            def __init__(self, p):
+                self.path = p
+                self.META = {'QUERY_STRING': ''}
+                self.user = type('u', (), {'is_authenticated': False})()
+
+        key = _cache_key(_Req(path))
+        try:
+            caches[alias].delete(key)
+            logger.info('Cache INVALIDATED %s', path)
+        except Exception as exc:
+            logger.warning('ResponseCacheMiddleware.invalidate error — %s', exc)
