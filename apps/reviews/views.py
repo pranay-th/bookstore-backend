@@ -1,5 +1,6 @@
-"""reviews/views.py — Book reviews management"""
+"""reviews/views.py — Book reviews with helpful voting"""
 from rest_framework import viewsets, permissions, status
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from apps.core.responses import success_response, error_response
 from apps.core.throttles import AuthenticatedUserThrottle, AnonUserThrottle
@@ -22,7 +23,7 @@ class ReviewViewSet(viewsets.ModelViewSet):
     - List, retrieve: anyone (read-only for anonymous)
     - Create, update, delete: authenticated users only
     """
-    queryset = Review.objects.filter(is_approved=True).select_related('user', 'book')
+    queryset = Review.objects.filter(is_approved=True).select_related('user', 'book').prefetch_related('helpful_users')
     permission_classes = [IsAuthenticatedOrReadOnly]
     throttle_classes = [AuthenticatedUserThrottle, AnonUserThrottle]
     
@@ -30,6 +31,12 @@ class ReviewViewSet(viewsets.ModelViewSet):
         if self.action == 'create':
             return ReviewCreateSerializer
         return ReviewSerializer
+    
+    def get_serializer_context(self):
+        """Add request to serializer context"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
     
     def list(self, request, *args, **kwargs):
         """List all approved reviews with pagination"""
@@ -128,3 +135,34 @@ class ReviewViewSet(viewsets.ModelViewSet):
             data={},
             status_code=status.HTTP_204_NO_CONTENT
         ), status=status.HTTP_204_NO_CONTENT)
+    
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def toggle_helpful(self, request, pk=None):
+        """Toggle helpful status for a review"""
+        review = self.get_object()
+        user = request.user
+        
+        # Don't allow users to mark their own reviews as helpful
+        if review.user == user:
+            return Response(error_response(
+                details="You cannot mark your own review as helpful.",
+                status_code=status.HTTP_400_BAD_REQUEST
+            ), status=status.HTTP_400_BAD_REQUEST)
+        
+        if user in review.helpful_users.all():
+            review.helpful_users.remove(user)
+            is_helpful = False
+            message = "Removed from helpful."
+        else:
+            review.helpful_users.add(user)
+            is_helpful = True
+            message = "Marked as helpful."
+        
+        return Response(success_response(
+            details=message,
+            data={
+                'is_helpful': is_helpful,
+                'helpful_count': review.helpful_count
+            },
+            status_code=status.HTTP_200_OK
+        ))
