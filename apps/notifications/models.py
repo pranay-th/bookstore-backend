@@ -57,8 +57,17 @@ class ScheduledMessage(models.Model):
 
     id            = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     recipient     = models.EmailField(help_text='Destination email address.')
-    subject       = models.CharField(max_length=255)
-    body          = models.TextField()
+    subject       = models.CharField(
+        max_length=255,
+        help_text='Supports tokens: {{first_name}}, {{last_name}}, {{full_name}}, {{email}}, {{role}}',
+    )
+    body          = models.TextField(
+        help_text=(
+            'Supports tokens: {{first_name}}, {{last_name}}, {{full_name}}, '
+            '{{email}}, {{role}}. If no name token is present, a personalized '
+            'greeting is prepended automatically.'
+        ),
+    )
     scheduled_for = models.DateTimeField(
         db_index=True,
         help_text='When the message should be sent (UTC).',

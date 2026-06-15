@@ -146,3 +146,83 @@ class ScheduledMessageTests(TestCase):
         self.assertEqual(msg.attempts, 3)
         self.assertEqual(msg.status, "failed")
         self.assertIn("smtp down", msg.error)
+
+
+@override_settings(CRON_SECRET_KEY="test-secret")
+class PersonalizationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            email="reader@example.com",
+            password="Reader@123",
+            first_name="Ada",
+            last_name="Lovelace",
+            role="CUSTOMER",
+            is_email_verified=True,
+        )
+
+    def _past(self, minutes=60):
+        return timezone.now() - timedelta(minutes=minutes)
+
+    @patch("apps.notifications.views.send_reminder_email")
+    def test_tokens_substituted_from_linked_user(self, mock_send):
+        ScheduledMessage.objects.create(
+            recipient="reader@example.com",
+            subject="A gift for {{first_name}}",
+            body="Hello {{full_name}}, your {{role}} perks are ready.",
+            scheduled_for=self._past(),
+            user=self.user,
+        )
+        self.client.post(
+            "/api/cron/dispatch-scheduled/", HTTP_X_CRON_SECRET="test-secret"
+        )
+        _, kwargs = mock_send.call_args
+        self.assertEqual(kwargs["subject"], "A gift for Ada")
+        self.assertEqual(
+            kwargs["body"], "Hello Ada Lovelace, your CUSTOMER perks are ready."
+        )
+
+    @patch("apps.notifications.views.send_reminder_email")
+    def test_user_resolved_by_recipient_email_when_no_fk(self, mock_send):
+        ScheduledMessage.objects.create(
+            recipient="reader@example.com",  # matches user by email
+            subject="Hi {{first_name}}",
+            body="{{first_name}}, come back!",
+            scheduled_for=self._past(),
+        )
+        self.client.post(
+            "/api/cron/dispatch-scheduled/", HTTP_X_CRON_SECRET="test-secret"
+        )
+        _, kwargs = mock_send.call_args
+        self.assertEqual(kwargs["subject"], "Hi Ada")
+        self.assertEqual(kwargs["body"], "Ada, come back!")
+
+    @patch("apps.notifications.views.send_reminder_email")
+    def test_greeting_prepended_when_no_token(self, mock_send):
+        ScheduledMessage.objects.create(
+            recipient="reader@example.com",
+            subject="Newsletter",
+            body="Here are this week's top reads.",
+            scheduled_for=self._past(),
+            user=self.user,
+        )
+        self.client.post(
+            "/api/cron/dispatch-scheduled/", HTTP_X_CRON_SECRET="test-secret"
+        )
+        _, kwargs = mock_send.call_args
+        self.assertTrue(kwargs["body"].startswith("Hi Ada,\n\n"))
+
+    @patch("apps.notifications.views.send_reminder_email")
+    def test_fallback_when_no_user_found(self, mock_send):
+        ScheduledMessage.objects.create(
+            recipient="stranger@example.com",  # no matching user
+            subject="Hello {{first_name}}",
+            body="{{first_name}}, welcome!",
+            scheduled_for=self._past(),
+        )
+        self.client.post(
+            "/api/cron/dispatch-scheduled/", HTTP_X_CRON_SECRET="test-secret"
+        )
+        _, kwargs = mock_send.call_args
+        self.assertEqual(kwargs["subject"], "Hello there")
+        self.assertEqual(kwargs["body"], "there, welcome!")

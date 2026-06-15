@@ -21,6 +21,7 @@ from apps.core.responses import error_response, success_response
 from apps.users.emails import send_reminder_email
 
 from .models import Notification, ScheduledMessage
+from .personalization import personalize_message
 from .serializers import NotificationSerializer, ScheduledMessageSerializer
 
 logger = logging.getLogger(__name__)
@@ -135,10 +136,12 @@ class CronDispatchScheduledView(APIView):
         for message in due:
             message.attempts += 1
             try:
+                # Personalize subject + body per recipient before sending
+                subject, body = personalize_message(message)
                 send_reminder_email(
                     to_email=message.recipient,
-                    subject=message.subject,
-                    body=message.body,
+                    subject=subject,
+                    body=body,
                 )
                 message.status = "sent"
                 message.sent_at = timezone.now()
