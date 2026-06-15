@@ -1,8 +1,7 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import AuthorViewSet
+from django.urls import path
+from .views import list_authors, author_books
 
-router = DefaultRouter()
-router.register('authors', AuthorViewSet, basename='author')
-
-urlpatterns = [path('', include(router.urls))]
+urlpatterns = [
+    path("authors/", list_authors, name="author-list"),
+    path("authors/<str:author_name>/books/", author_books, name="author-books"),
+]
