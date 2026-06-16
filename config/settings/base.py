@@ -56,6 +56,7 @@ LOCAL_APPS = [
     'apps.payments',
     'apps.coupons',
     'apps.reviews',
+    'apps.discussions',
     'apps.notifications',
     'apps.analytics',
 ]
@@ -76,6 +77,9 @@ MIDDLEWARE = [
     # ThrottleMiddleware must come AFTER AuthenticationMiddleware so that
     # request.user is populated and auth vs. anon limits are applied correctly.
     'apps.core.middleware.ThrottleMiddleware',
+    # ResponseCacheMiddleware must come AFTER ThrottleMiddleware so throttled
+    # requests are blocked before we even check the cache.
+    'apps.core.middleware.ResponseCacheMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -185,7 +189,7 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_THROTTLE_RATES': {
         'user':                '10000/day',
-        'anon':                '1000/day',
+        'anon':                '20000/day',
         'login':               '20/minute',
         'signup':              '10/hour',
         'otp_generate':        '10/hour',
@@ -247,7 +251,58 @@ CACHES = {
         },
         'KEY_PREFIX': 'bookstore_throttle',
     },
+    # Response cache — stores anonymous GET responses for 15 minutes.
+    # Uses Redis when available; Django falls back to LocMemCache on error.
+    'response_cache': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': REDIS_URL,
+        'OPTIONS': {
+            'socket_connect_timeout': 1,
+            'socket_timeout': 1,
+        },
+        'KEY_PREFIX': 'bookstore_response',
+    },
 }
+
+# ---------------------------------------------------------------------------
+# Response cache settings
+# ---------------------------------------------------------------------------
+RESPONSE_CACHE_ENABLED  = config('RESPONSE_CACHE_ENABLED', default=True, cast=bool)
+RESPONSE_CACHE_TIMEOUT  = config('RESPONSE_CACHE_TIMEOUT', default=900,  cast=int)   # 15 min server-side
+RESPONSE_CACHE_ALIAS    = 'response_cache'
+RESPONSE_CACHE_MAX_SIZE = config('RESPONSE_CACHE_MAX_SIZE', default=1_048_576, cast=int)  # 1 MB
+
+# How long browsers / the Vercel CDN may cache a public response before
+# revalidating with If-None-Match. Kept shorter than the server timeout so the
+# edge refreshes more often than the origin entry expires. The 304 path makes
+# revalidation cheap (no body re-sent).
+RESPONSE_CACHE_CLIENT_MAX_AGE = config('RESPONSE_CACHE_CLIENT_MAX_AGE', default=300, cast=int)  # 5 min
+
+# Paths that are always excluded from response caching.
+# Auth endpoints, write-heavy paths, and personalised routes should be here.
+RESPONSE_CACHE_EXCLUDE_PATHS = [
+    '/admin/',
+    '/static/',
+    '/media/',
+    '/schema/',
+    '/swagger/',
+    '/redoc/',
+    '/favicon.ico',
+    '/health/',      # liveness probe must always reach the app
+    '/user/',        # all auth endpoints — login, signup, OTP, etc.
+    '/api/author/',  # author studio — per-user personalised, never cache
+]
+
+# Restrict caching to these public, read-mostly prefixes. Anything outside is
+# never cached even on a GET — this keeps personalised/owner-scoped endpoints
+# (cart, orders, wishlist) off the shared cache by default rather than relying
+# only on the exclude list. Override via env (comma-separated) or set empty to
+# fall back to "cache everything not excluded".
+RESPONSE_CACHE_INCLUDE_PATHS = config(
+    'RESPONSE_CACHE_INCLUDE_PATHS',
+    default='/api/books/,/api/categories/,/api/authors/',
+    cast=lambda v: [p.strip() for p in v.split(',') if p.strip()] or None,
+)
 
 # ---------------------------------------------------------------------------
 # Throttle rates — override per environment via settings or THROTTLE_RATES dict
@@ -263,12 +318,12 @@ THROTTLE_RATES = {
     # General endpoints
     'search':              config('THROTTLE_SEARCH',              default='300/minute'),
     'user':                config('THROTTLE_AUTH_USER',           default='10000/day'),
-    'anon':                config('THROTTLE_ANON_USER',           default='1000/day'),
+    'anon':                config('THROTTLE_ANON_USER',           default='20000/day'),
 }
 
 # Middleware-level global limits (broader, first-line defence)
 MIDDLEWARE_THROTTLE_ENABLED   = config('MIDDLEWARE_THROTTLE_ENABLED', default=True, cast=bool)
-MIDDLEWARE_THROTTLE_ANON_RATE = config('MIDDLEWARE_THROTTLE_ANON_RATE', default='1000/day')
+MIDDLEWARE_THROTTLE_ANON_RATE = config('MIDDLEWARE_THROTTLE_ANON_RATE', default='20000/day')
 MIDDLEWARE_THROTTLE_AUTH_RATE = config('MIDDLEWARE_THROTTLE_AUTH_RATE', default='10000/day')
 
 # ---------------------------------------------------------------------------
