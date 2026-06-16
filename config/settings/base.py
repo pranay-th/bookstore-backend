@@ -346,6 +346,13 @@ FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
 CRON_SECRET_KEY = config('CRON_SECRET_KEY', default='')
 
 # ---------------------------------------------------------------------------
+# Analytics microservice (FastAPI)
+# Base URL the frontend / backend can use to reach the analytics service.
+# Events are published to Redis (see apps.core.events) and consumed there.
+# ---------------------------------------------------------------------------
+ANALYTICS_SERVICE_URL = config('ANALYTICS_SERVICE_URL', default='http://localhost:8001')
+
+# ---------------------------------------------------------------------------
 # SendGrid via django-anymail
 # ---------------------------------------------------------------------------
 ANYMAIL = {
