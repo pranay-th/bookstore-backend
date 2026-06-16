@@ -25,6 +25,10 @@ class Book(models.Model):
     )
     isbn = models.CharField(max_length=20, blank=True, null=True, unique=True)
     description = models.TextField(blank=True)
+    # Comma-separated subjects/genres (e.g. "Fiction, Fantasy, Adventure").
+    # Sourced from Open Library's `subject` data and used to filter the
+    # catalogue by category. Indexed-via-icontains lookups at query time.
+    subjects = models.TextField(blank=True, default="")
     cover_url = models.URLField(blank=True)
     published_year = models.IntegerField(blank=True, null=True)
     language = models.CharField(max_length=50, blank=True)

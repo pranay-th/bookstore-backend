@@ -21,5 +21,6 @@ class BookSerializer(serializers.ModelSerializer):
             "stock",
             "is_active",
             "created_at",
+            "subjects",
         ]
         read_only_fields = ["id", "created_at"]
