@@ -5,6 +5,7 @@ All book data is stored locally in PostgreSQL.
 Imported once from Open Library, served directly from the database.
 """
 import uuid
+from django.conf import settings
 from django.db import models
 
 
@@ -12,6 +13,16 @@ class Book(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255)
     author = models.CharField(max_length=255, blank=True)
+    # The platform user who owns/manages this listing. Null for the bulk
+    # Open Library import; set when a book is published through the author
+    # studio so authors can only manage their own catalogue.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="authored_books",
+    )
     isbn = models.CharField(max_length=20, blank=True, null=True, unique=True)
     description = models.TextField(blank=True)
     cover_url = models.URLField(blank=True)
