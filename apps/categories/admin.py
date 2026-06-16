@@ -8,3 +8,6 @@ class CategoryAdmin(admin.ModelAdmin):
     list_filter = ("is_active",)
     search_fields = ("name", "slug")
     prepopulated_fields = {"slug": ("name",)}
+    list_editable = ("is_active",)
+    ordering = ("name",)
+    autocomplete_fields = ("parent",)
