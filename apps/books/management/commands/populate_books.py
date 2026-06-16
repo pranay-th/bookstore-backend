@@ -131,15 +131,11 @@ class Command(BaseCommand):
                 languages = doc.get("language") or []
                 language = languages[0] if languages else ""
 
-                subjects_list = doc.get("subject") or []
-                subjects = ", ".join(subjects_list[:10])
-
                 book = Book(
                     title=title[:255],
                     author=author[:255],
                     isbn=isbn[:20] if isbn else None,
                     description="",  # Search API doesn't return descriptions
-                    subjects=subjects[:2000],
                     cover_url=build_cover_url(doc.get("cover_i")),
                     published_year=doc.get("first_publish_year"),
                     language=language[:50],

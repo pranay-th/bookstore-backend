@@ -46,15 +46,8 @@ class BookViewSet(ModelViewSet):
         search = self.request.query_params.get("search")
         if search:
             queryset = queryset.filter(
-                Q(title__icontains=search)
-                | Q(author__icontains=search)
-                | Q(subjects__icontains=search)
+                Q(title__icontains=search) | Q(author__icontains=search)
             )
-        # Filter by category/subject (e.g. ?category=fantasy). Matches against
-        # the comma-separated `subjects` field populated from Open Library.
-        category = self.request.query_params.get("category")
-        if category:
-            queryset = queryset.filter(subjects__icontains=category)
         return queryset
 
     # ------------------------------------------------------------------
@@ -71,12 +64,6 @@ class BookViewSet(ModelViewSet):
             OpenApiParameter(
                 name="search",
                 description="Search by title or author (case-insensitive)",
-                required=False,
-                type=str,
-            ),
-            OpenApiParameter(
-                name="category",
-                description="Filter by subject/category (e.g. fantasy, history)",
                 required=False,
                 type=str,
             ),
