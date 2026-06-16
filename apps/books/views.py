@@ -25,6 +25,7 @@ from rest_framework.viewsets import ModelViewSet
 from apps.core.responses import success_response
 from apps.core.serializers import SuccessResponseSerializer, ErrorResponseSerializer
 from apps.core.pagination import StandardResultsSetPagination
+from apps.core.events import BOOK_VIEWED, SEARCH_QUERY, publish_event
 
 from .models import Book
 from .serializers import BookSerializer
@@ -125,6 +126,15 @@ class BookViewSet(ModelViewSet):
     )
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
+        search = request.query_params.get("search")
+        if search:
+            publish_event(
+                SEARCH_QUERY,
+                {
+                    "user_id": str(request.user.id) if request.user.is_authenticated else None,
+                    "query": search,
+                },
+            )
         paginator = StandardResultsSetPagination()
         page = paginator.paginate_queryset(queryset, request)
         serializer = BookSerializer(page, many=True)
@@ -197,6 +207,16 @@ class BookViewSet(ModelViewSet):
     )
     def retrieve(self, request, *args, **kwargs):
         book = self.get_object()
+        # Emit a book_viewed event for the analytics microservice.
+        publish_event(
+            BOOK_VIEWED,
+            {
+                "book_id": str(book.id),
+                "user_id": str(request.user.id) if request.user.is_authenticated else None,
+                "title": book.title,
+                "author": book.author,
+            },
+        )
         serializer = BookSerializer(book)
         return success_response(data=serializer.data, message="Book details retrieved.")
 
