@@ -62,10 +62,12 @@ class Post(models.Model):
         return f'Post by {self.author.email} in {self.thread.title}'
 
     def save(self, *args, **kwargs):
-        # Mark as edited if content changes after creation
-        if self.pk:
-            original = Post.objects.get(pk=self.pk)
-            if original.content != self.content:
+        # Mark as edited if content changes after creation.
+        # Note: id is a UUID with a default, so self.pk is set even before the
+        # first insert — use _state.adding to detect a genuine update instead.
+        if not self._state.adding:
+            original = Post.objects.filter(pk=self.pk).first()
+            if original and original.content != self.content:
                 self.is_edited = True
         super().save(*args, **kwargs)
         # Update thread's updated_at timestamp

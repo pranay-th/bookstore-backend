@@ -123,7 +123,7 @@ class PostViewSet(viewsets.ModelViewSet):
                 return error_response(message="This thread is locked.", status_code=403)
         except Thread.DoesNotExist:
             return error_response(message="Thread not found.", status_code=404)
-        post = serializer.save(author=request.user)
+        post = serializer.save(author=request.user, thread=thread)
         return success_response(data=PostSerializer(post).data, message="Post created successfully.", status_code=201)
 
     def update(self, request, *args, **kwargs):
