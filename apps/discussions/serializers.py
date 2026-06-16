@@ -24,13 +24,14 @@ class PostSerializer(serializers.ModelSerializer):
 class ThreadListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for thread list (no posts)."""
     author_name  = serializers.SerializerMethodField()
+    author_email = serializers.EmailField(source='author.email', read_only=True)
     post_count   = serializers.SerializerMethodField()
     last_post_at = serializers.SerializerMethodField()
 
     class Meta:
         model  = Thread
         fields = [
-            'id', 'title', 'author_name', 'category',
+            'id', 'title', 'author_name', 'author_email', 'category',
             'is_pinned', 'is_locked',
             'post_count', 'last_post_at',
             'created_at', 'updated_at',

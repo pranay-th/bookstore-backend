@@ -8,9 +8,6 @@ class ReviewSerializer(serializers.ModelSerializer):
     user_email    = serializers.EmailField(source='user.email', read_only=True)
     book_title    = serializers.CharField(source='book.title', read_only=True)
     helpful_count = serializers.SerializerMethodField()
-
-    def get_helpful_count(self, obj):
-        return obj.helpful_users.count()
     is_helpful    = serializers.SerializerMethodField()
 
     class Meta:
@@ -28,6 +25,9 @@ class ReviewSerializer(serializers.ModelSerializer):
     def get_user_name(self, obj):
         return getattr(obj.user, 'full_name', None) or obj.user.email
 
+    def get_helpful_count(self, obj):
+        return obj.helpful_users.count()
+
     def get_is_helpful(self, obj):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
@@ -36,34 +36,32 @@ class ReviewSerializer(serializers.ModelSerializer):
 
 
 class ReviewCreateSerializer(serializers.Serializer):
-    """Accept a free-text book title, look it up, and create the review."""
+    """Accept a free-text book title, look it up, create the review."""
     book_title = serializers.CharField(max_length=255)
     rating     = serializers.IntegerField(min_value=1, max_value=5)
-    title      = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    title      = serializers.CharField(max_length=200, required=False, allow_blank=True, default='')
     body       = serializers.CharField()
 
-    def validate_book_title(self, value):
-        book = Book.objects.filter(title__iexact=value.strip()).first()
+    def validate(self, attrs):
+        """Resolve book during validation so it's available in create()."""
+        title = attrs['book_title'].strip()
+        book  = Book.objects.filter(title__iexact=title).first()
         if not book:
-            # Try partial match
-            book = Book.objects.filter(title__icontains=value.strip()).first()
+            book = Book.objects.filter(title__icontains=title).first()
         if not book:
-            raise serializers.ValidationError(
-                f'No book found matching "{value}". Please check the title and try again.'
-            )
-        # Cache for create()
-        self._book = book
-        return value
+            raise serializers.ValidationError({
+                'book_title': f'No book found matching "{title}". Please check the title and try again.'
+            })
+        attrs['_book'] = book
+        return attrs
 
     def create(self, validated_data):
-        book = getattr(self, '_book', None)
-        if not book:
-            book = Book.objects.filter(
-                title__icontains=validated_data['book_title'].strip()
-            ).first()
+        book = validated_data.pop('_book')
+        validated_data.pop('book_title')
+        user = validated_data.pop('user')
         return Review.objects.create(
             book=book,
-            user=validated_data['user'],
+            user=user,
             rating=validated_data['rating'],
             title=validated_data.get('title', ''),
             body=validated_data['body'],
