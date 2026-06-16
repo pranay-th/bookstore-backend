@@ -13,7 +13,7 @@ class PostSerializer(serializers.ModelSerializer):
             'content', 'is_edited', 'created_at', 'updated_at',
         ]
         read_only_fields = [
-            'id', 'author', 'author_name', 'author_email',
+            'id', 'thread', 'author', 'author_name', 'author_email',
             'is_edited', 'created_at', 'updated_at',
         ]
 
