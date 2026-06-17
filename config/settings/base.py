@@ -167,7 +167,7 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # DRF
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_SCHEMA_CLASS': 'apps.core.schema.TaggedAutoSchema',
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_FILTER_BACKENDS': [
@@ -210,6 +210,33 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'Bookstore backend API documentation',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
+
+    # ── Tag definitions (controls order + descriptions in Swagger UI) ───
+    'TAGS': [
+        {'name': 'Health', 'description': 'Service health probes'},
+        {'name': 'Auth', 'description': 'Signup, login, OTP, JWT refresh, email verification'},
+        {'name': 'Books', 'description': 'Book catalogue (public read, admin write)'},
+        {'name': 'Categories', 'description': 'Book categories'},
+        {'name': 'Authors', 'description': 'Author listings and images'},
+        {'name': 'Author Studio', 'description': 'Author-scoped book management (AUTHOR role required)'},
+        {'name': 'Cart', 'description': 'User shopping cart'},
+        {'name': 'Orders', 'description': 'Order lifecycle (create, view, cancel)'},
+        {'name': 'Payments', 'description': 'Payment processing'},
+        {'name': 'Reviews', 'description': 'Book reviews and ratings'},
+        {'name': 'Discussions', 'description': 'Community forum threads and posts'},
+        {'name': 'Notifications', 'description': 'In-app notifications and scheduled messages'},
+        {'name': 'Inventory', 'description': 'Stock tracking and reorder management'},
+        {'name': 'Wishlist', 'description': 'User wishlists'},
+    ],
+
+    # ── Auto-tagging: derive tag from URL prefix so views don't need
+    # explicit tags. Uses a preprocessing hook to assign tags by path.
+    'PREPROCESSING_HOOKS': [
+        'apps.core.schema.preprocessing_filter_spec',
+    ],
+    'POSTPROCESSING_HOOKS': [
+        'drf_spectacular.hooks.postprocess_schema_enums',
+    ],
 }
 
 # ---------------------------------------------------------------------------
