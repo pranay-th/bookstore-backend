@@ -102,11 +102,22 @@ class OrderViewSet(viewsets.ModelViewSet):
                     oi.order = order
                 OrderItem.objects.bulk_create(order_items)
 
-                # Deduct stock (best effort — skip if insufficient)
+                # Deduct stock atomically using F() to avoid race conditions.
+                from django.db.models import F
+
                 for oi in order_items:
-                    Book.objects.filter(
+                    updated = Book.objects.filter(
                         id=oi.book_id, stock__gte=oi.quantity
-                    ).update(stock=oi.book.stock - oi.quantity)
+                    ).update(stock=F('stock') - oi.quantity)
+                    if not updated:
+                        # Stock insufficient — the filter didn't match.
+                        # The order is already created (confirmed), so we log
+                        # but don't fail. In a real system you'd reject or
+                        # backorder. For the demo, we just skip.
+                        logger.warning(
+                            "Insufficient stock for book_id=%s (wanted %d)",
+                            oi.book_id, oi.quantity,
+                        )
 
                 # Clear the backend cart if it exists
                 try:
