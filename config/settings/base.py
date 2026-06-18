@@ -432,6 +432,14 @@ ANALYTICS_SERVICE_URL = config(
 ANALYTICS_SERVICE_TIMEOUT = config('ANALYTICS_SERVICE_TIMEOUT', default=20, cast=int)
 
 # ---------------------------------------------------------------------------
+# Razorpay — Test Mode (UPI payments)
+# KEY_SECRET is server-side only and used for signature verification.
+# ---------------------------------------------------------------------------
+RAZORPAY_KEY_ID = config('RAZORPAY_KEY_ID', default='')
+RAZORPAY_KEY_SECRET = config('RAZORPAY_KEY_SECRET', default='')
+RAZORPAY_CURRENCY = config('RAZORPAY_CURRENCY', default='INR')
+
+# ---------------------------------------------------------------------------
 # SendGrid via django-anymail
 # ---------------------------------------------------------------------------
 ANYMAIL = {
