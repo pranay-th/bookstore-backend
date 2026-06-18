@@ -38,6 +38,14 @@ class NotificationViewSet(ModelViewSet):
     def get_queryset(self):
         return Notification.objects.filter(user=self.request.user)
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return success_response(
+            data=serializer.data,
+            message="Notifications retrieved successfully.",
+        )
+
     @action(detail=True, methods=["patch"])
     def read(self, request, pk=None):
         notif = self.get_object()

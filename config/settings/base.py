@@ -318,6 +318,7 @@ RESPONSE_CACHE_EXCLUDE_PATHS = [
     '/health/',      # liveness probe must always reach the app
     '/user/',        # all auth endpoints — login, signup, OTP, etc.
     '/api/author/',  # author studio — per-user personalised, never cache
+    '/api/analytics/',  # admin analytics proxy — privileged, never cache
 ]
 
 # Restrict caching to these public, read-mostly prefixes. Anything outside is
@@ -374,10 +375,17 @@ CRON_SECRET_KEY = config('CRON_SECRET_KEY', default='')
 
 # ---------------------------------------------------------------------------
 # Analytics microservice (FastAPI)
-# Base URL the frontend / backend can use to reach the analytics service.
-# Events are published to Redis (see apps.core.events) and consumed there.
+# Base URL of the bookstore-microservices analytics service, used by
+# apps.core.analytics_client to proxy read-only analytics + report generation.
+# Events are also published to Redis (see apps.core.events) for the consumer.
+# Set to '' to disable proxying (the analytics endpoints then respond 503
+# instead of erroring, so the core API keeps working without the service).
 # ---------------------------------------------------------------------------
-ANALYTICS_SERVICE_URL = config('ANALYTICS_SERVICE_URL', default='http://localhost:8001')
+ANALYTICS_SERVICE_URL = config(
+    'ANALYTICS_SERVICE_URL', default='http://localhost:8001'
+).strip().rstrip('/')
+# Per-request timeout (seconds) for calls to the analytics service.
+ANALYTICS_SERVICE_TIMEOUT = config('ANALYTICS_SERVICE_TIMEOUT', default=10, cast=int)
 
 # ---------------------------------------------------------------------------
 # SendGrid via django-anymail
