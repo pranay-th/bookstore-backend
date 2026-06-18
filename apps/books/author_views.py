@@ -19,6 +19,7 @@ Endpoints:
   GET    /api/author/reviews/               Recent reviews across the author's books
 """
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from django.db.models import Avg, Count, DecimalField, F, Sum
 from django.db.models.functions import Coalesce
@@ -454,11 +455,30 @@ class AuthorStudioViewSet(ViewSet):
             "start_date": request.query_params.get("start_date"),
             "end_date": request.query_params.get("end_date"),
         }
-        try:
-            summary = analytics_client.get("/analytics/sales/summary", params=params)
-            daily = analytics_client.get("/analytics/sales/daily", params=params)
-        except AnalyticsServiceError as exc:
-            return error_response(exc.message, status_code=exc.status_code)
+
+        # Fetch the summary and daily series concurrently to halve the wall-clock
+        # latency (each is an independent round-trip to the analytics service).
+        # The summary is the critical payload; the daily series is best-effort,
+        # so a slow/failed daily call still returns a usable dashboard.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            summary_future = pool.submit(
+                analytics_client.get, "/analytics/sales/summary", params
+            )
+            daily_future = pool.submit(
+                analytics_client.get, "/analytics/sales/daily", params
+            )
+
+            try:
+                summary = summary_future.result()
+            except AnalyticsServiceError as exc:
+                return error_response(exc.message, status_code=exc.status_code)
+
+            try:
+                daily = daily_future.result()
+            except AnalyticsServiceError as exc:
+                # Non-fatal: return the summary with an empty series and flag it.
+                logger.warning("Author analytics: daily series unavailable: %s", exc.message)
+                daily = []
 
         return success_response(
             data={"summary": summary, "daily": daily},
