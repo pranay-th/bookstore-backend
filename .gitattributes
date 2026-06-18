@@ -1,0 +1,4 @@
+# Ensure shell scripts always use LF line endings, even on Windows checkouts.
+# A CRLF shebang line breaks execution inside the Linux container.
+*.sh text eol=lf
+entrypoint.sh text eol=lf
