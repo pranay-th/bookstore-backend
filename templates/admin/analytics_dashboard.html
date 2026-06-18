@@ -1,0 +1,237 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Analytics Dashboard{% endblock %}
+{% block content_title %}<h1>📊 Analytics Dashboard</h1>{% endblock %}
+
+{% block extrahead %}
+<style>
+  .analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin: 20px 0;
+  }
+  .analytics-card {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .analytics-card h3 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .analytics-card .value {
+    font-size: 28px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-bottom: 4px;
+  }
+  .analytics-card .subtext {
+    font-size: 12px;
+    color: #888;
+  }
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 14px;
+  }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-label { color: #666; }
+  .stat-value { font-weight: 600; color: #333; }
+  .section-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 30px 0 10px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #417690;
+    color: #417690;
+  }
+  .status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .status-healthy { background: #d4edda; color: #155724; }
+  .status-warning { background: #fff3cd; color: #856404; }
+  .status-error { background: #f8d7da; color: #721c24; }
+  .top-books-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-top: 10px;
+  }
+  .top-books-table th {
+    text-align: left;
+    padding: 8px;
+    background: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+    color: #495057;
+  }
+  .top-books-table td {
+    padding: 8px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .service-link {
+    display: inline-block;
+    margin-top: 20px;
+    padding: 8px 16px;
+    background: #417690;
+    color: #fff;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 13px;
+  }
+  .service-link:hover { background: #205067; color: #fff; }
+  .no-data {
+    padding: 40px;
+    text-align: center;
+    color: #888;
+    font-size: 16px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if not has_data %}
+<div class="no-data">
+  <p>⚠️ Could not reach the Analytics Microservice.</p>
+  <p style="font-size: 13px; margin-top: 8px;">
+    Make sure the service is running at <code>{{ service_url }}</code>
+  </p>
+  <a href="{{ service_url }}/docs" target="_blank" class="service-link">
+    Open Microservice Docs →
+  </a>
+</div>
+{% else %}
+
+<!-- ═══ Sales Summary ═══ -->
+<h2 class="section-title">💰 Sales Overview</h2>
+{% if sales %}
+<div class="analytics-grid">
+  <div class="analytics-card">
+    <h3>Total Revenue</h3>
+    <div class="value">₹{{ sales.total_revenue|floatformat:2 }}</div>
+    <div class="subtext">All-time confirmed revenue</div>
+  </div>
+  <div class="analytics-card">
+    <h3>Total Orders</h3>
+    <div class="value">{{ sales.total_orders }}</div>
+    <div class="subtext">Confirmed + shipped + delivered</div>
+  </div>
+  <div class="analytics-card">
+    <h3>Avg Order Value</h3>
+    <div class="value">₹{{ sales.average_order_value|floatformat:2 }}</div>
+    <div class="subtext">Revenue ÷ orders</div>
+  </div>
+  <div class="analytics-card">
+    <h3>This Month</h3>
+    <div class="value">₹{{ sales.monthly_revenue|floatformat:2 }}</div>
+    <div class="subtext">Current calendar month</div>
+  </div>
+</div>
+
+{% if sales.top_selling_books %}
+<h3 style="margin-top: 20px; font-size: 15px;">🏆 Top Selling Books</h3>
+<table class="top-books-table">
+  <thead>
+    <tr><th>Book</th><th>Author</th><th>Units Sold</th><th>Revenue</th></tr>
+  </thead>
+  <tbody>
+    {% for book in sales.top_selling_books %}
+    <tr>
+      <td>{{ book.title }}</td>
+      <td>{{ book.author|default:"—" }}</td>
+      <td>{{ book.units_sold }}</td>
+      <td>₹{{ book.revenue|floatformat:2 }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+
+<!-- ═══ Inventory Health ═══ -->
+<h2 class="section-title">📦 Inventory Health</h2>
+{% if inventory %}
+<div class="analytics-grid">
+  <div class="analytics-card">
+    <h3>Total Books</h3>
+    <div class="value">{{ inventory.total_books|default:"—" }}</div>
+    <div class="subtext">Active catalogue size</div>
+  </div>
+  <div class="analytics-card">
+    <h3>In Stock</h3>
+    <div class="value" style="color: #28a745;">{{ inventory.in_stock|default:"—" }}</div>
+    <div class="subtext">Above reorder level</div>
+  </div>
+  <div class="analytics-card">
+    <h3>Low Stock</h3>
+    <div class="value" style="color: #ffc107;">{{ inventory.low_stock|default:"—" }}</div>
+    <div class="subtext">Below reorder level</div>
+  </div>
+  <div class="analytics-card">
+    <h3>Out of Stock</h3>
+    <div class="value" style="color: #dc3545;">{{ inventory.out_of_stock|default:"—" }}</div>
+    <div class="subtext">Zero units available</div>
+  </div>
+  <div class="analytics-card">
+    <h3>Inventory Value</h3>
+    <div class="value">₹{{ inventory.inventory_value|floatformat:0 }}</div>
+    <div class="subtext">Stock × price (total)</div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ═══ Customer Analytics ═══ -->
+<h2 class="section-title">👥 Customer Insights</h2>
+{% if customers %}
+<div class="analytics-grid">
+  <div class="analytics-card">
+    <h3>Total Customers (with orders)</h3>
+    <div class="value">{{ customers.total_customers }}</div>
+  </div>
+  <div class="analytics-card">
+    <h3>Repeat Customers</h3>
+    <div class="value">{{ customers.repeat_customers }}</div>
+    <div class="subtext">{{ customers.repeat_customer_rate|floatformat:1 }}% repeat rate</div>
+  </div>
+  <div class="analytics-card">
+    <h3>Average LTV</h3>
+    <div class="value">₹{{ customers.average_ltv|floatformat:2 }}</div>
+    <div class="subtext">Lifetime value per customer</div>
+  </div>
+  <div class="analytics-card">
+    <h3>Median LTV</h3>
+    <div class="value">₹{{ customers.median_ltv|floatformat:2 }}</div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ═══ Links ═══ -->
+<div style="margin-top: 30px;">
+  <a href="{{ service_url }}/docs" target="_blank" class="service-link">
+    📖 Full API Docs (Swagger)
+  </a>
+  <a href="{{ service_url }}/analytics/inventory/slow-movers" target="_blank" class="service-link" style="margin-left: 8px;">
+    🐢 Slow Movers
+  </a>
+  <a href="{{ service_url }}/analytics/customers/churn-risk" target="_blank" class="service-link" style="margin-left: 8px;">
+    ⚠️ Churn Risk
+  </a>
+  <a href="{{ service_url }}/reports/sales?format=csv" target="_blank" class="service-link" style="margin-left: 8px;">
+    📥 Export Sales CSV
+  </a>
+</div>
+
+{% endif %}
+{% endblock %}

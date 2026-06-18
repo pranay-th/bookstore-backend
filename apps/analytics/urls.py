@@ -1,9 +1,12 @@
 """
 analytics/urls.py
 
-Store-wide (admin) analytics, proxied to the FastAPI analytics microservice.
-Mounted under /api/ in config/urls.py, so paths below resolve as
+Store-wide (admin) analytics REST API, proxied to the FastAPI analytics
+microservice. Mounted under /api/ in config/urls.py, so paths below resolve as
 /api/analytics/...
+
+The Django-admin HTML dashboard lives in admin_urls.py (mounted at
+/admin/analytics/).
 """
 from django.urls import path
 

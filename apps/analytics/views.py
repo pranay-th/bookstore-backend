@@ -1,27 +1,36 @@
 """
 analytics/views.py
 
-Store-wide analytics — thin proxy to the FastAPI analytics microservice
-(``bookstore-microservices``). Heavy aggregation lives in the microservice,
-which reads the same PostgreSQL database; Django just authorises the request
-and forwards it.
+Two surfaces onto the FastAPI analytics microservice (``bookstore-microservices``),
+which does the heavy aggregation against the shared PostgreSQL database:
 
-All endpoints here are admin-only (IsAdminUser). Author-scoped analytics live
-in the author studio (apps.books.author_views).
+1. REST API (admin-only DRF endpoints, mounted under /api/analytics/) — consumed
+   by the frontend. Thin proxy that authorises then forwards.
 
-Endpoints (mounted under /api/analytics/):
-  GET /api/analytics/sales/        Headline sales summary
-  GET /api/analytics/sales/daily/  Daily revenue time series
-  GET /api/analytics/sales/monthly/  Monthly revenue time series
-  GET /api/analytics/sales/top-books/  Best-selling books
-  GET /api/analytics/sales/by-author/  Revenue grouped by author
-  GET /api/analytics/sales/by-category/  Revenue grouped by category
-  GET /api/analytics/inventory/    Inventory health snapshot
-  GET /api/analytics/customers/    Customer lifetime-value overview
-  POST /api/analytics/reports/     Generate a report (pdf/csv/xlsx)
+2. Admin dashboard (staff-only HTML view + JSON proxy, mounted under
+   /admin/analytics/) — renders live analytics inside the Django admin.
+
+Author-scoped analytics live separately in the author studio
+(apps.books.author_views).
+
+REST endpoints (under /api/analytics/):
+  GET  /api/analytics/sales/          Headline sales summary
+  GET  /api/analytics/sales/daily/    Daily revenue time series
+  GET  /api/analytics/sales/monthly/  Monthly revenue time series
+  GET  /api/analytics/sales/top-books/  Best-selling books
+  GET  /api/analytics/sales/by-author/  Revenue grouped by author
+  GET  /api/analytics/sales/by-category/  Revenue grouped by category
+  GET  /api/analytics/inventory/      Inventory health snapshot
+  GET  /api/analytics/customers/      Customer lifetime-value overview
+  POST /api/analytics/reports/        Generate a report (pdf/csv/xlsx)
 """
 import logging
 
+import httpx
+from django.conf import settings
+from django.contrib.admin.views.decorators import staff_member_required
+from django.http import JsonResponse
+from django.shortcuts import render
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser
@@ -56,6 +65,9 @@ def _proxy(request, path, params=None, message="Analytics retrieved."):
     return success_response(data=data, message=message)
 
 
+# ===========================================================================
+# REST API (DRF, admin-only) — mounted under /api/analytics/
+# ===========================================================================
 @extend_schema(
     summary="Store-wide sales summary (admin)",
     parameters=_DATE_PARAMS,
@@ -196,3 +208,54 @@ def generate_report(request):
     return success_response(
         data=data, message="Report generation requested.", status_code=201
     )
+
+
+# ===========================================================================
+# Admin dashboard (staff-only HTML + JSON proxy) — mounted under /admin/analytics/
+# ===========================================================================
+def _service_url():
+    return getattr(settings, 'ANALYTICS_SERVICE_URL', 'http://localhost:8001')
+
+
+def _fetch(path: str, timeout: float = 10.0):
+    """Fetch JSON from the analytics microservice. Returns None on failure."""
+    url = f"{_service_url()}{path}"
+    try:
+        resp = httpx.get(url, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as exc:
+        logger.warning("Analytics fetch failed (%s): %s", url, exc)
+        return None
+
+
+@staff_member_required
+def analytics_dashboard(request):
+    """Render the analytics dashboard inside the admin."""
+    sales = _fetch('/analytics/sales/summary')
+    inventory = _fetch('/analytics/inventory/health')
+    customers = _fetch('/analytics/customers/ltv')
+
+    context = {
+        'title': 'Analytics Dashboard',
+        'sales': sales,
+        'inventory': inventory,
+        'customers': customers,
+        'service_url': _service_url(),
+        'has_data': any([sales, inventory, customers]),
+    }
+    return render(request, 'admin/analytics_dashboard.html', context)
+
+
+@staff_member_required
+def analytics_api_proxy(request):
+    """
+    Proxy endpoint: GET /admin/analytics/api/?path=<path>
+    Forwards requests to the microservice so admin JS widgets can fetch data
+    without CORS issues.
+    """
+    path = request.GET.get('path', '/analytics/sales/summary')
+    data = _fetch(path)
+    if data is None:
+        return JsonResponse({'error': 'Analytics service unreachable'}, status=503)
+    return JsonResponse(data, safe=False)
