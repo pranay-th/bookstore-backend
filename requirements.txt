@@ -33,6 +33,11 @@ PyOTP==2.9.0
 # Redis (OTP storage)
 redis==5.0.8
 
+# Celery — background tasks + scheduled jobs (broker: Redis)
+celery==5.4.0
+# Process supervisor — runs gunicorn + celery worker/beat in one container
+supervisor==4.2.5
+
 # Email — SendGrid via django-anymail
 django-anymail[sendgrid]==11.1
 
