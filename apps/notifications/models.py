@@ -22,9 +22,9 @@ class Notification(models.Model):
     notif_type = models.CharField(max_length=30, choices=TYPE_CHOICES, default='general')
     title      = models.CharField(max_length=200)
     message    = models.TextField()
+    link       = models.CharField(max_length=255, blank=True, default='')
     is_read    = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
-    # TODO: Add action_url for deep-linking
 
     class Meta:
         db_table = 'notifications'

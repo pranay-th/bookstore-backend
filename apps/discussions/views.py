@@ -14,7 +14,7 @@ class IsAuthenticatedOrReadOnly(permissions.BasePermission):
         return request.user and request.user.is_authenticated
 
 
-def _notify(user, title, message, notif_type='general'):
+def _notify(user, title, message, notif_type='general', link=''):
     """Create an in-app notification — silently swallows any error."""
     try:
         from apps.notifications.models import Notification
@@ -23,6 +23,7 @@ def _notify(user, title, message, notif_type='general'):
             notif_type=notif_type,
             title=title,
             message=message,
+            link=link,
         )
     except Exception:
         pass
@@ -98,6 +99,7 @@ class ThreadViewSet(viewsets.ModelViewSet):
                 title      = "New reply on your thread",
                 message    = f'{request.user.email} replied to your thread "{thread.title}".',
                 notif_type = 'general',
+                link       = f'/discussions?thread={thread.id}',
             )
 
         return success_response(
@@ -146,6 +148,7 @@ class PostViewSet(viewsets.ModelViewSet):
                 title      = "New reply on your thread",
                 message    = f'{request.user.email} replied to your thread "{thread.title}".',
                 notif_type = 'general',
+                link       = f'/discussions?thread={thread.id}',
             )
 
         return success_response(data=PostSerializer(post).data, message="Post created successfully.", status_code=201)
@@ -162,7 +165,13 @@ class PostViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        if instance.author != request.user and not request.user.is_staff:
-            return error_response(message="You can only delete your own posts.", status_code=403)
+        # The reply author, the thread author, or staff can delete a reply
+        is_reply_author  = instance.author == request.user
+        is_thread_author = instance.thread.author == request.user
+        if not (is_reply_author or is_thread_author or request.user.is_staff):
+            return error_response(
+                message="You can only delete your own replies or replies on your thread.",
+                status_code=403,
+            )
         instance.delete()
         return success_response(data={}, message="Post deleted successfully.", status_code=204)
