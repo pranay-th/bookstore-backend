@@ -24,14 +24,13 @@ RUN SECRET_KEY=build-time-placeholder \
     DJANGO_SETTINGS_MODULE=config.settings.production \
     python manage.py collectstatic --no-input
 
-# Migrations run on container start via the entrypoint (before gunicorn), so the
+# Migrations run on container start via the entrypoint (before the CMD), so the
 # schema always matches the deployed code.
 RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8000
 
+# The entrypoint migrates, then execs the CMD. supervisord runs gunicorn +
+# the Celery worker + Celery beat together in this single container.
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["gunicorn", "config.wsgi:application", \
-     "--bind", "0.0.0.0:8000", \
-     "--workers", "2", \
-     "--timeout", "120"]
+CMD ["supervisord", "-c", "/app/supervisord.conf"]
