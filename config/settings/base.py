@@ -292,8 +292,52 @@ CACHES = {
 }
 
 # ---------------------------------------------------------------------------
-# Response cache settings
+# Celery — background tasks + scheduled jobs
+# Broker/result backend reuse the shared Redis instance (REDIS_URL) unless
+# CELERY_BROKER_URL / CELERY_RESULT_BACKEND are set explicitly.
+#
+# Tuned for the Render free tier (single 512 MB container shared with gunicorn):
+#   * JSON serialisation only (no pickle).
+#   * Results are OFF by default (task_ignore_result) to save Redis + RAM;
+#     opt in per task with @shared_task(ignore_result=False) when needed.
+#   * Late acks + bounded prefetch + child recycling cap memory creep so the
+#     worker can't slowly grow into an OOM kill.
 # ---------------------------------------------------------------------------
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', default=REDIS_URL)
+CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='')
+
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
+
+# Reliability: a task is re-queued if the worker dies mid-run.
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# Recycle worker child processes to bound memory growth on the free tier.
+CELERY_WORKER_MAX_TASKS_PER_CHILD = config(
+    'CELERY_WORKER_MAX_TASKS_PER_CHILD', default=100, cast=int
+)
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = config(
+    'CELERY_WORKER_MAX_MEMORY_PER_CHILD', default=150_000, cast=int  # KB (~150 MB)
+)
+# Don't let a stuck bot task hang a worker forever.
+CELERY_TASK_SOFT_TIME_LIMIT = config('CELERY_TASK_SOFT_TIME_LIMIT', default=120, cast=int)
+CELERY_TASK_TIME_LIMIT = config('CELERY_TASK_TIME_LIMIT', default=180, cast=int)
+
+# Connreliability on a possibly-cold Redis.
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
+# Periodic schedule (Celery beat). Tasks live in each app's tasks.py.
+# Placeholder cadence for the delivery bots — tune in the next phase.
+CELERY_BEAT_SCHEDULE = {
+    # 'dispatch-scheduled-messages': {
+    #     'task': 'apps.notifications.tasks.dispatch_due_scheduled_messages',
+    #     'schedule': 300.0,  # every 5 minutes
+    # },
+}
 RESPONSE_CACHE_ENABLED  = config('RESPONSE_CACHE_ENABLED', default=True, cast=bool)
 RESPONSE_CACHE_TIMEOUT  = config('RESPONSE_CACHE_TIMEOUT', default=900,  cast=int)   # 15 min server-side
 RESPONSE_CACHE_ALIAS    = 'response_cache'
@@ -398,10 +442,32 @@ DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@example.com')
 # ---------------------------------------------------------------------------
 # CORS
 # ---------------------------------------------------------------------------
+def _normalize_origin(value):
+    """Normalize a CORS origin to scheme://host[:port] with no trailing path.
+
+    django-cors-headers rejects origins that include a path or trailing slash
+    (corsheaders.E014). Env vars are often pasted as a full URL like
+    'https://app.example.com/', which would crash the system check on boot.
+    Stripping to just the origin makes the config tolerant of that.
+    """
+    origin = (value or '').strip()
+    if not origin:
+        return ''
+    # Drop everything from the first '/' after the scheme (path, trailing slash).
+    if '://' in origin:
+        scheme, _, rest = origin.partition('://')
+        host = rest.split('/', 1)[0]
+        return f'{scheme}://{host}'
+    # No scheme — just remove any path component.
+    return origin.split('/', 1)[0]
+
+
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
     default='http://localhost:3000',
-    cast=lambda v: [o.strip() for o in v.split(',')],
+    cast=lambda v: [
+        o for o in (_normalize_origin(part) for part in v.split(',')) if o
+    ],
 )
 
 # Allow all Vercel preview/production URLs via regex so the free-tier
