@@ -183,3 +183,116 @@ class AuthorStudioTestCase(APITestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["book_title"], "My Great Novel")
         self.assertEqual(results[0]["rating"], 5)
+
+
+class AuthorAnalyticsTestCase(APITestCase):
+    """Tests for the author analytics endpoints, which proxy to the
+    FastAPI analytics microservice. The microservice itself is mocked so these
+    tests never make a real network call."""
+
+    def setUp(self):
+        self.author = User.objects.create_user(
+            email="ana@example.com",
+            password="Passw0rd!",
+            first_name="Ana",
+            last_name="Lytics",
+            role="AUTHOR",
+            is_email_verified=True,
+        )
+        self.other_author = User.objects.create_user(
+            email="rival@example.com",
+            password="Passw0rd!",
+            role="AUTHOR",
+            is_email_verified=True,
+        )
+        self.customer = User.objects.create_user(
+            email="reader@example.com",
+            password="Passw0rd!",
+            role="CUSTOMER",
+            is_email_verified=True,
+        )
+        self.my_book = Book.objects.create(
+            title="Owned Book", price=Decimal("10.00"), stock=50, owner=self.author
+        )
+        self.their_book = Book.objects.create(
+            title="Rival Book", price=Decimal("10.00"), stock=50, owner=self.other_author
+        )
+
+    # ----------------------------------------------------------------- access
+    def test_customer_forbidden_from_analytics(self):
+        self.client.force_authenticate(self.customer)
+        res = self.client.get("/api/author/analytics/")
+        self.assertEqual(res.status_code, 403)
+
+    # ------------------------------------------------------- catalogue analytics
+    def test_analytics_proxies_owned_book_ids(self):
+        from unittest.mock import patch
+
+        captured = {}
+
+        def fake_get(path, params=None):
+            captured.setdefault("calls", []).append((path, params))
+            if path.endswith("/summary"):
+                return {"total_revenue": 100.0, "total_orders": 5}
+            return [{"period": "2026-06-01", "revenue": 20.0, "orders": 1, "items_sold": 2}]
+
+        self.client.force_authenticate(self.author)
+        with patch("apps.books.author_views.analytics_client.get", side_effect=fake_get):
+            res = self.client.get("/api/author/analytics/")
+
+        self.assertEqual(res.status_code, 200)
+        data = res.data["data"]
+        self.assertEqual(data["summary"]["total_revenue"], 100.0)
+        self.assertEqual(len(data["daily"]), 1)
+        # The owned book id must be forwarded, and the rival's must not.
+        summary_call = next(c for c in captured["calls"] if c[0].endswith("/summary"))
+        forwarded_ids = summary_call[1]["book_ids"]
+        self.assertIn(str(self.my_book.id), forwarded_ids)
+        self.assertNotIn(str(self.their_book.id), forwarded_ids)
+
+    def test_analytics_zero_state_without_books(self):
+        # Author with no books gets a clean empty payload, no service call.
+        empty_author = User.objects.create_user(
+            email="empty@example.com", password="Passw0rd!", role="AUTHOR",
+            is_email_verified=True,
+        )
+        self.client.force_authenticate(empty_author)
+        res = self.client.get("/api/author/analytics/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["data"]["summary"]["total_revenue"], 0)
+        self.assertEqual(res.data["data"]["daily"], [])
+
+    def test_analytics_service_unavailable(self):
+        from unittest.mock import patch
+
+        from apps.core.analytics_client import AnalyticsServiceError
+
+        self.client.force_authenticate(self.author)
+        with patch(
+            "apps.books.author_views.analytics_client.get",
+            side_effect=AnalyticsServiceError("down", status_code=503),
+        ):
+            res = self.client.get("/api/author/analytics/")
+        self.assertEqual(res.status_code, 503)
+        self.assertFalse(res.data["status"]["success"])
+
+    # ----------------------------------------------------------- book analytics
+    def test_book_analytics_ownership_enforced(self):
+        self.client.force_authenticate(self.author)
+        # Asking for a book the author does not own -> 404, no service call.
+        res = self.client.get(f"/api/author/analytics/book/{self.their_book.id}/")
+        self.assertEqual(res.status_code, 404)
+
+    def test_book_analytics_proxies_for_owned_book(self):
+        from unittest.mock import patch
+
+        self.client.force_authenticate(self.author)
+        payload = {"book_id": str(self.my_book.id), "units_sold": 7, "revenue": 70.0}
+        with patch(
+            "apps.books.author_views.analytics_client.get", return_value=payload
+        ) as mock_get:
+            res = self.client.get(f"/api/author/analytics/book/{self.my_book.id}/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["data"]["units_sold"], 7)
+        called_path = mock_get.call_args[0][0]
+        self.assertEqual(called_path, f"/analytics/sales/book/{self.my_book.id}")

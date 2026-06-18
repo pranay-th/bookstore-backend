@@ -291,6 +291,7 @@ RESPONSE_CACHE_EXCLUDE_PATHS = [
     '/health/',      # liveness probe must always reach the app
     '/user/',        # all auth endpoints — login, signup, OTP, etc.
     '/api/author/',  # author studio — per-user personalised, never cache
+    '/api/analytics/',  # admin analytics proxy — privileged, never cache
 ]
 
 # Restrict caching to these public, read-mostly prefixes. Anything outside is
@@ -344,6 +345,16 @@ FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
 # Cron secret — used to authenticate requests from crojob.org
 # ---------------------------------------------------------------------------
 CRON_SECRET_KEY = config('CRON_SECRET_KEY', default='')
+
+# ---------------------------------------------------------------------------
+# Analytics microservice (FastAPI)
+# Base URL of the bookstore-microservices analytics service. When unset the
+# analytics endpoints respond with 503 instead of erroring, so the core API
+# keeps working even if the microservice isn't deployed.
+# ---------------------------------------------------------------------------
+ANALYTICS_SERVICE_URL = config('ANALYTICS_SERVICE_URL', default='').strip().rstrip('/')
+# Per-request timeout (seconds) for calls to the analytics service.
+ANALYTICS_SERVICE_TIMEOUT = config('ANALYTICS_SERVICE_TIMEOUT', default=10, cast=int)
 
 # ---------------------------------------------------------------------------
 # SendGrid via django-anymail
