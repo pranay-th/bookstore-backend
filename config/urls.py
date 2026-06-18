@@ -10,6 +10,7 @@ from drf_spectacular.views import (
 )
 
 urlpatterns = [
+    path('admin/analytics/', include('apps.analytics.urls')),
     path('admin/', admin.site.urls),
     path('health/', include('apps.core.urls')),
     path('user/', include('apps.users.urls')),
@@ -36,7 +37,8 @@ urlpatterns = [
     path('api/', include('apps.discussions.urls')),
     # path('api/inventory/',     include('apps.inventory.urls')),
     # path('api/wishlist/',      include('apps.wishlist.urls')),
-    # path('api/orders/',        include('apps.orders.urls')),
+    path('api/', include('apps.orders.urls')),
+    path('api/', include('apps.coupons.urls')),
     # path('api/payments/',      include('apps.payments.urls')),
     # path('api/coupons/',       include('apps.coupons.urls')),
     # path('api/analytics/',     include('apps.analytics.urls')),

@@ -22,7 +22,7 @@ class PostSerializer(serializers.ModelSerializer):
 
 
 class ThreadListSerializer(serializers.ModelSerializer):
-    """Lightweight serializer for thread list — no posts."""
+    """Lightweight serializer for thread list (no posts)."""
     author_name  = serializers.SerializerMethodField()
     author_email = serializers.EmailField(source='author.email', read_only=True)
     post_count   = serializers.SerializerMethodField()

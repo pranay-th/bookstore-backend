@@ -1,7 +1,7 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import PageViewViewSet
+from django.urls import path
+from . import views
 
-router = DefaultRouter()
-router.register('analytics/pageviews', PageViewViewSet, basename='pageview')
-urlpatterns = [path('', include(router.urls))]
+urlpatterns = [
+    path('dashboard/', views.analytics_dashboard, name='analytics-dashboard'),
+    path('api/', views.analytics_api_proxy, name='analytics-api-proxy'),
+]
