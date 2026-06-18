@@ -56,3 +56,40 @@ class OrderItem(models.Model):
     @property
     def subtotal(self):
         return self.quantity * self.unit_price
+
+
+class OrderDelivery(models.Model):
+    """Delivery contact + shipping address captured for a single order.
+
+    Stored as a snapshot on the order (rather than only a FK to UserAddress)
+    so the shipping details are preserved exactly as entered at checkout, even
+    if the user later edits or deletes their saved address.
+    """
+    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    order       = models.OneToOneField(
+        Order, on_delete=models.CASCADE, related_name='delivery'
+    )
+
+    # Contact
+    full_name   = models.CharField(max_length=255)
+    email       = models.EmailField()
+    phone       = models.CharField(max_length=20, blank=True)
+
+    # Shipping address (snapshot)
+    line1       = models.CharField(max_length=255)
+    line2       = models.CharField(max_length=255, blank=True)
+    city        = models.CharField(max_length=100)
+    state       = models.CharField(max_length=100)
+    postal_code = models.CharField(max_length=20)
+    country     = models.CharField(max_length=2, default='IN', help_text='ISO 3166-1 alpha-2')
+
+    notes       = models.TextField(blank=True, help_text='Delivery instructions')
+
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'order_deliveries'
+
+    def __str__(self):
+        return f'Delivery for order {self.order_id} → {self.full_name}, {self.city}'

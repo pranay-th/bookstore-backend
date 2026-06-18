@@ -18,8 +18,8 @@ from rest_framework.permissions import IsAuthenticated
 from apps.core.events import ORDER_CREATED, publish_event
 from apps.core.responses import error_response, success_response
 
-from .models import Order, OrderItem
-from .serializers import CheckoutSerializer, OrderSerializer
+from .models import Order, OrderItem, OrderDelivery
+from .serializers import CheckoutSerializer, OrderSerializer, OrderDeliverySerializer
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,59 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
         )
 
+    # ── Delivery defaults (auto-fill the checkout form) ───────
+    @extend_schema(
+        summary="Get saved delivery defaults for the checkout form",
+        description=(
+            "Returns sensible defaults to pre-fill the checkout delivery form: "
+            "the user's name/email/phone, and — if they've ordered before — the "
+            "shipping address from their most recent order."
+        ),
+        responses={200: OpenApiResponse(description="Delivery defaults")},
+    )
+    @action(detail=False, methods=["get"], url_path="delivery-defaults")
+    def delivery_defaults(self, request):
+        user = request.user
+        full_name = (
+            f"{getattr(user, 'first_name', '') or ''} "
+            f"{getattr(user, 'last_name', '') or ''}"
+        ).strip()
+
+        data = {
+            "full_name": full_name,
+            "email": user.email,
+            "phone": getattr(user, "phone", "") or "",
+            "line1": "",
+            "line2": "",
+            "city": "",
+            "state": "",
+            "postal_code": "",
+            "country": "IN",
+        }
+
+        # Reuse the most recent order's delivery address if there is one.
+        last = (
+            Order.objects.filter(user=user, delivery__isnull=False)
+            .select_related("delivery")
+            .order_by("-created_at")
+            .first()
+        )
+        if last and getattr(last, "delivery", None):
+            d = last.delivery
+            data.update({
+                "full_name": d.full_name or full_name,
+                "email": d.email or user.email,
+                "phone": d.phone or data["phone"],
+                "line1": d.line1,
+                "line2": d.line2,
+                "city": d.city,
+                "state": d.state,
+                "postal_code": d.postal_code,
+                "country": d.country or "IN",
+            })
+
+        return success_response(data=data, message="Delivery defaults.")
+
     # ── Checkout (simulated payment) ──────────────────────────
     @extend_schema(
         summary="Checkout — create order from cart (mock payment)",
@@ -68,6 +121,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         items_data = serializer.validated_data["items"]
         payment_method = serializer.validated_data.get("payment_method", "card")
+        delivery_data = serializer.validated_data.get("delivery")
 
         if not items_data:
             return error_response(message="Cart is empty.", status_code=400)
@@ -113,6 +167,10 @@ class OrderViewSet(viewsets.ModelViewSet):
                 for oi in order_items:
                     oi.order = order
                 OrderItem.objects.bulk_create(order_items)
+
+                # Persist delivery details (snapshot) when supplied.
+                if delivery_data:
+                    OrderDelivery.objects.create(order=order, **delivery_data)
 
                 # Deduct stock atomically using F() to avoid race conditions.
                 from django.db.models import F
@@ -172,6 +230,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 "item_count": len(order_items),
                 "payment_method": payment_method,
                 "skipped_books": skipped,
+                "delivery": OrderDeliverySerializer(order.delivery).data
+                if hasattr(order, "delivery") else None,
                 "message": (
                     "Payment successful (simulated). Your order is confirmed!"
                     + (f" ({len(skipped)} unavailable item(s) were skipped.)" if skipped else "")
