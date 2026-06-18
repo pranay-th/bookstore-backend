@@ -20,6 +20,7 @@ _PATH_TAG_MAP = [
     ('/api/categories/', 'Categories'),
     ('/api/cart/', 'Cart'),
     ('/api/orders/', 'Orders'),
+    ('/api/coupons/', 'Coupons'),
     ('/api/payments/', 'Payments'),
     ('/api/reviews/', 'Reviews'),
     ('/api/discussions/', 'Discussions'),
