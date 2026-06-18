@@ -35,8 +35,11 @@ redis==5.0.8
 
 # Celery — background tasks + scheduled jobs (broker: Redis)
 celery==5.4.0
-# Process supervisor — runs gunicorn + celery worker/beat in one container
+# Process supervisor — runs gunicorn + celery worker/beat in one container.
+# supervisor imports pkg_resources, which lives in setuptools; Python 3.12
+# slim images no longer bundle setuptools, so pin it explicitly.
 supervisor==4.2.5
+setuptools==75.6.0
 
 # Email — SendGrid via django-anymail
 django-anymail[sendgrid]==11.1
