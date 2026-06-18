@@ -35,7 +35,7 @@ class Payment(models.Model):
     status             = models.CharField(max_length=20, choices=STATUS_CHOICES, default='created')
 
     # Razorpay identifiers
-    razorpay_order_id   = models.CharField(max_length=255, unique=True, db_index=True)
+    razorpay_order_id   = models.CharField(max_length=255, unique=True)
     razorpay_payment_id = models.CharField(max_length=255, blank=True, default='')
     razorpay_signature  = models.CharField(max_length=255, blank=True, default='')
 
