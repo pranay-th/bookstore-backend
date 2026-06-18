@@ -46,9 +46,16 @@ class BookViewSet(ModelViewSet):
         queryset = Book.objects.filter(is_active=True)
         search = self.request.query_params.get("search")
         if search:
-            queryset = queryset.filter(
-                Q(title__icontains=search) | Q(author__icontains=search)
-            )
+            # Tokenized AND search: every whitespace-separated term must appear
+            # in the title OR the author. This is far more robust than matching
+            # the whole query as one substring — e.g. a search of
+            # "Whale adventure Willard Price" (title + author, as the assistant
+            # often builds it) still matches the book "Whale Adventure" by
+            # "Willard Price". A single-word query behaves exactly as before.
+            for term in search.split():
+                queryset = queryset.filter(
+                    Q(title__icontains=term) | Q(author__icontains=term)
+                )
         return queryset
 
     # ------------------------------------------------------------------
