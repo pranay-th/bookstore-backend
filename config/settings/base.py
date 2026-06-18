@@ -27,6 +27,7 @@ ALLOWED_HOSTS = config(
 # Applications
 # ---------------------------------------------------------------------------
 DJANGO_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -36,6 +37,7 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
+    'channels',
     'rest_framework',
     'corsheaders',
     'django_filters',
@@ -262,6 +264,37 @@ SIMPLE_JWT = {
 # Redis — OTP storage + throttle cache
 # ---------------------------------------------------------------------------
 REDIS_URL = config('REDIS_URL', default='redis://localhost:6379')
+
+# ---------------------------------------------------------------------------
+# Channel Layers — WebSocket backend (reuses shared Redis)
+# Render's Key-Value store uses rediss:// (TLS). channels-redis handles this
+# natively when the URL starts with rediss://.
+# ---------------------------------------------------------------------------
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [REDIS_URL],
+            'capacity': 1500,
+            'expiry': 10,
+        },
+    },
+}
+
+# Fallback: If no Redis is available (local dev without Redis), use in-memory
+# channel layer. This only works for a single process (no cross-worker support).
+if not REDIS_URL or REDIS_URL == 'redis://localhost:6379':
+    try:
+        import redis as _redis_check
+        _r = _redis_check.from_url(REDIS_URL or 'redis://localhost:6379', socket_connect_timeout=1)
+        _r.ping()
+        del _r
+    except Exception:
+        CHANNEL_LAYERS = {
+            'default': {
+                'BACKEND': 'channels.layers.InMemoryChannelLayer',
+            },
+        }
 
 # Django cache backend — used by DRF throttle classes and the throttle middleware.
 # Falls back to in-memory cache if Redis is unavailable (development only).
