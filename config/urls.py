@@ -11,7 +11,7 @@ from drf_spectacular.views import (
 
 urlpatterns = [
     # Admin + analytics dashboard inside admin
-    path('admin/analytics/', include('apps.analytics.urls')),
+    path('admin/analytics/', include('apps.analytics.admin_urls')),
     path('admin/', admin.site.urls),
 
     # Health probe
@@ -34,6 +34,7 @@ urlpatterns = [
     path('api/', include('apps.cart.urls')),
     path('api/', include('apps.reviews.urls')),
     path('api/', include('apps.discussions.urls')),
+    path('api/', include('apps.analytics.urls')),
     path('api/', include('apps.orders.urls')),
     path('api/', include('apps.coupons.urls')),
     # path('api/inventory/',  include('apps.inventory.urls')),

@@ -25,6 +25,12 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+# Default read budget (seconds). Analytics aggregates run against a shared
+# (possibly cold-starting) Postgres, so reads can be slow on the first hit.
+_DEFAULT_TIMEOUT = 20
+# Connecting should always be fast; a slow connect means the service is down.
+_CONNECT_TIMEOUT = 5
+
 
 class AnalyticsServiceError(Exception):
     """Raised when the analytics microservice is unreachable or errors.
@@ -55,6 +61,16 @@ def _base_url() -> str:
     return url
 
 
+def _timeout() -> httpx.Timeout:
+    """Build a split connect/read timeout.
+
+    A short connect timeout fails fast when the service is down, while a longer
+    read timeout tolerates slow aggregation queries (e.g. a cold Postgres).
+    """
+    read = getattr(settings, "ANALYTICS_SERVICE_TIMEOUT", _DEFAULT_TIMEOUT)
+    return httpx.Timeout(read, connect=_CONNECT_TIMEOUT)
+
+
 def _clean_params(params: Optional[dict]) -> Optional[dict]:
     """Drop None values so we don't send empty query params upstream."""
     if not params:
@@ -65,6 +81,9 @@ def _clean_params(params: Optional[dict]) -> Optional[dict]:
 def get(path: str, params: Optional[dict] = None) -> Any:
     """GET ``path`` on the analytics service and return parsed JSON.
 
+    Retries once on a timeout/connection error to absorb cold starts, then
+    surfaces an ``AnalyticsServiceError`` so callers can return a clean 503/502.
+
     Args:
         path:   Service path beginning with '/', e.g. '/analytics/sales/summary'.
         params: Optional query params (None values are stripped).
@@ -73,37 +92,57 @@ def get(path: str, params: Optional[dict] = None) -> Any:
         AnalyticsServiceError: on configuration, network or upstream errors.
     """
     base = _base_url()
-    timeout = getattr(settings, "ANALYTICS_SERVICE_TIMEOUT", 10)
     url = f"{base}{path}"
-    try:
-        resp = httpx.get(url, params=_clean_params(params), timeout=timeout)
-        resp.raise_for_status()
-        return resp.json()
-    except httpx.HTTPStatusError as exc:
-        logger.warning(
-            "Analytics service returned %s for %s",
-            exc.response.status_code,
-            path,
-        )
-        raise AnalyticsServiceError(
-            f"Analytics service error ({exc.response.status_code}).",
-            status_code=502,
-        ) from exc
-    except (httpx.RequestError, ValueError) as exc:
-        logger.warning("Analytics service request failed for %s: %s", path, exc)
-        raise AnalyticsServiceError(
-            "Analytics service is currently unavailable.",
-            status_code=503,
-        ) from exc
+    cleaned = _clean_params(params)
+    last_exc: Optional[Exception] = None
+
+    for attempt in (1, 2):
+        try:
+            resp = httpx.get(url, params=cleaned, timeout=_timeout())
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.HTTPStatusError as exc:
+            # An HTTP error response is deterministic — do not retry.
+            logger.warning(
+                "Analytics service returned %s for %s",
+                exc.response.status_code,
+                path,
+            )
+            raise AnalyticsServiceError(
+                f"Analytics service error ({exc.response.status_code}).",
+                status_code=502,
+            ) from exc
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            # Transient — retry once (cold start / warm-up) before giving up.
+            last_exc = exc
+            logger.warning(
+                "Analytics service request failed for %s (attempt %s/2): %s",
+                path, attempt, exc,
+            )
+            continue
+        except ValueError as exc:
+            # Bad JSON body — not worth retrying.
+            logger.warning("Analytics service returned invalid JSON for %s: %s", path, exc)
+            raise AnalyticsServiceError(
+                "Analytics service returned an invalid response.",
+                status_code=502,
+            ) from exc
+
+    raise AnalyticsServiceError(
+        "Analytics service is currently unavailable (timed out).",
+        status_code=503,
+    ) from last_exc
 
 
 def post(path: str, json: Optional[dict] = None) -> Any:
-    """POST JSON to ``path`` on the analytics service and return parsed JSON."""
+    """POST JSON to ``path`` on the analytics service and return parsed JSON.
+
+    Report generation is not idempotent, so this does NOT retry.
+    """
     base = _base_url()
-    timeout = getattr(settings, "ANALYTICS_SERVICE_TIMEOUT", 10)
     url = f"{base}{path}"
     try:
-        resp = httpx.post(url, json=json or {}, timeout=timeout)
+        resp = httpx.post(url, json=json or {}, timeout=_timeout())
         resp.raise_for_status()
         return resp.json()
     except httpx.HTTPStatusError as exc:

@@ -385,7 +385,7 @@ ANALYTICS_SERVICE_URL = config(
     'ANALYTICS_SERVICE_URL', default='http://localhost:8001'
 ).strip().rstrip('/')
 # Per-request timeout (seconds) for calls to the analytics service.
-ANALYTICS_SERVICE_TIMEOUT = config('ANALYTICS_SERVICE_TIMEOUT', default=10, cast=int)
+ANALYTICS_SERVICE_TIMEOUT = config('ANALYTICS_SERVICE_TIMEOUT', default=20, cast=int)
 
 # ---------------------------------------------------------------------------
 # SendGrid via django-anymail
