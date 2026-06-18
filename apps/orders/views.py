@@ -79,8 +79,14 @@ class OrderViewSet(viewsets.ModelViewSet):
                 # Build order items and compute total
                 total = 0
                 order_items = []
+                skipped = []
                 for item in items_data:
-                    book = Book.objects.get(id=item["book_id"], is_active=True)
+                    try:
+                        book = Book.objects.get(id=item["book_id"], is_active=True)
+                    except Book.DoesNotExist:
+                        # Skip unavailable books instead of failing the whole order
+                        skipped.append(str(item["book_id"]))
+                        continue
                     qty = item["quantity"]
                     unit_price = book.price
                     total += unit_price * qty
@@ -90,6 +96,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                             quantity=qty,
                             unit_price=unit_price,
                         )
+                    )
+
+                if not order_items:
+                    return error_response(
+                        message="None of the books in the cart are available.",
+                        status_code=400,
                     )
 
                 # Create the order with status=confirmed (mock payment success)
@@ -128,10 +140,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                 except Exception:
                     pass  # Cart module may not be fully wired
 
-        except Book.DoesNotExist:
+        except Exception as exc:
+            logger.exception("Checkout failed: %s", exc)
             return error_response(
-                message="One or more books in the cart are no longer available.",
-                status_code=400,
+                message="Checkout failed. Please try again.",
+                status_code=500,
             )
 
         # Publish analytics event
@@ -158,7 +171,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                 "total_amount": str(order.total_amount),
                 "item_count": len(order_items),
                 "payment_method": payment_method,
-                "message": "Payment successful (simulated). Your order is confirmed!",
+                "skipped_books": skipped,
+                "message": (
+                    "Payment successful (simulated). Your order is confirmed!"
+                    + (f" ({len(skipped)} unavailable item(s) were skipped.)" if skipped else "")
+                ),
             },
             message="Order placed successfully.",
             status_code=201,

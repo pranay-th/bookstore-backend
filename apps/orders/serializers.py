@@ -29,7 +29,7 @@ class OrderSerializer(serializers.ModelSerializer):
 
 class CheckoutItemSerializer(serializers.Serializer):
     """A single line item in the checkout payload."""
-    book_id = serializers.UUIDField()
+    book_id = serializers.CharField(max_length=36)
     quantity = serializers.IntegerField(min_value=1)
 
 
