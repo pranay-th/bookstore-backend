@@ -24,8 +24,13 @@ RUN SECRET_KEY=build-time-placeholder \
     DJANGO_SETTINGS_MODULE=config.settings.production \
     python manage.py collectstatic --no-input
 
+# Migrations run on container start via the entrypoint (before gunicorn), so the
+# schema always matches the deployed code.
+RUN chmod +x /app/entrypoint.sh
+
 EXPOSE 8000
 
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["gunicorn", "config.wsgi:application", \
      "--bind", "0.0.0.0:8000", \
      "--workers", "2", \

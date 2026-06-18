@@ -3,9 +3,11 @@ services:
     name: bookstore-backend
     env: python
     # collectstatic runs here where DATABASE_URL is available.
-    # Migrations are handled by the GitHub Actions deploy workflow, not here.
+    # Migrations run on container start (startCommand) so the schema always
+    # matches the deployed code, even if the GitHub Actions migrate job is
+    # skipped or races behind a Render auto-deploy.
     buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --no-input"
-    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+    startCommand: "python manage.py migrate --no-input && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
     envVars:
       - key: DJANGO_SETTINGS_MODULE
         value: config.settings.production
