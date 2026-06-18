@@ -22,11 +22,13 @@ import logging
 
 from django.db.models import Avg, Count, DecimalField, F, Sum
 from django.db.models.functions import Coalesce
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import permissions
 from rest_framework.decorators import action
 from rest_framework.viewsets import GenericViewSet, ViewSet
 
+from apps.core import analytics_client
+from apps.core.analytics_client import AnalyticsServiceError
 from apps.core.pagination import StandardResultsSetPagination
 from apps.core.responses import error_response, success_response
 from apps.core.serializers import ErrorResponseSerializer, SuccessResponseSerializer
@@ -396,3 +398,108 @@ class AuthorStudioViewSet(ViewSet):
             for r in qs
         ]
         return success_response(data={"results": data}, message="Reviews retrieved.")
+
+    # ------------------------------------------------------------------
+    # SALES ANALYTICS — GET /api/author/analytics/
+    # ------------------------------------------------------------------
+    def _owned_book_ids(self, request) -> "list[str]":
+        """UUID strings for every book the current author owns."""
+        return [
+            str(pk)
+            for pk in Book.objects.filter(owner=request.user).values_list(
+                "id", flat=True
+            )
+        ]
+
+    @extend_schema(
+        summary="Sales analytics for my catalogue",
+        description=(
+            "Proxies to the analytics microservice, scoped to the books this "
+            "author owns. Returns the headline sales summary (revenue, units "
+            "sold, orders, top titles) plus a daily revenue series.\n\n"
+            "Optional `start_date` / `end_date` (YYYY-MM-DD) narrow the window."
+        ),
+        parameters=[
+            OpenApiParameter(name="start_date", required=False, type=str),
+            OpenApiParameter(name="end_date", required=False, type=str),
+        ],
+        responses={
+            200: OpenApiResponse(response=SuccessResponseSerializer),
+            503: OpenApiResponse(response=ErrorResponseSerializer),
+        },
+    )
+    @action(detail=False, methods=["get"], url_path="analytics")
+    def analytics(self, request):
+        book_ids = self._owned_book_ids(request)
+        if not book_ids:
+            # No catalogue yet — return a well-formed empty payload so the UI
+            # can render zero-state cards without a microservice round-trip.
+            return success_response(
+                data={
+                    "summary": {
+                        "total_revenue": 0,
+                        "total_orders": 0,
+                        "total_items_sold": 0,
+                        "average_order_value": 0,
+                        "monthly_revenue": 0,
+                        "top_selling_books": [],
+                    },
+                    "daily": [],
+                },
+                message="No books yet — analytics will appear once you publish.",
+            )
+
+        params = {
+            "book_ids": ",".join(book_ids),
+            "start_date": request.query_params.get("start_date"),
+            "end_date": request.query_params.get("end_date"),
+        }
+        try:
+            summary = analytics_client.get("/analytics/sales/summary", params=params)
+            daily = analytics_client.get("/analytics/sales/daily", params=params)
+        except AnalyticsServiceError as exc:
+            return error_response(exc.message, status_code=exc.status_code)
+
+        return success_response(
+            data={"summary": summary, "daily": daily},
+            message="Author sales analytics retrieved.",
+        )
+
+    # ------------------------------------------------------------------
+    # PER-BOOK SALES — GET /api/author/books/<id>/analytics/
+    # ------------------------------------------------------------------
+    @extend_schema(
+        summary="Sales analytics for one of my books",
+        description=(
+            "Proxies to the analytics microservice for a single book the author "
+            "owns. Returns totals (units, revenue, orders) and a daily series.\n\n"
+            "Returns 404 if the book is not part of the author's catalogue."
+        ),
+        parameters=[
+            OpenApiParameter(name="start_date", required=False, type=str),
+            OpenApiParameter(name="end_date", required=False, type=str),
+        ],
+        responses={
+            200: OpenApiResponse(response=SuccessResponseSerializer),
+            404: OpenApiResponse(response=ErrorResponseSerializer),
+            503: OpenApiResponse(response=ErrorResponseSerializer),
+        },
+    )
+    @action(detail=False, methods=["get"], url_path=r"analytics/book/(?P<book_id>[^/.]+)")
+    def book_analytics(self, request, book_id=None):
+        # Ownership check — authors may only see their own books' analytics.
+        if not Book.objects.filter(owner=request.user, pk=book_id).exists():
+            return error_response("Book not found.", status_code=404)
+
+        params = {
+            "start_date": request.query_params.get("start_date"),
+            "end_date": request.query_params.get("end_date"),
+        }
+        try:
+            data = analytics_client.get(
+                f"/analytics/sales/book/{book_id}", params=params
+            )
+        except AnalyticsServiceError as exc:
+            return error_response(exc.message, status_code=exc.status_code)
+
+        return success_response(data=data, message="Book analytics retrieved.")
