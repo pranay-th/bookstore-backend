@@ -157,6 +157,9 @@ class DiscussionConsumer(AsyncJsonWebsocketConsumer):
             await self.send_json({'type': 'error', 'message': 'Failed to create post.'})
             return
 
+        # Notify the thread author if someone else replied (parity with REST).
+        await self._notify_thread_author(post)
+
         # Broadcast to group
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -378,3 +381,21 @@ class DiscussionConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def _get_author_name(self, user):
         return getattr(user, 'full_name', None) or user.email
+
+    @database_sync_to_async
+    def _notify_thread_author(self, post):
+        """Create an in-app notification for the thread author on a new reply."""
+        try:
+            thread = post.thread
+            if thread.author_id == self.user.id:
+                return  # don't notify yourself
+            from apps.notifications.models import Notification
+            Notification.objects.create(
+                user=thread.author,
+                notif_type='general',
+                title='New reply on your thread',
+                message=f'{self.user.email} replied to your thread "{thread.title}".',
+                link=f'/discussions?thread={thread.id}',
+            )
+        except Exception:
+            pass  # notifications are best-effort
