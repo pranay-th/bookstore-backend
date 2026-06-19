@@ -435,6 +435,15 @@ MIDDLEWARE_THROTTLE_ANON_RATE = config('MIDDLEWARE_THROTTLE_ANON_RATE', default=
 MIDDLEWARE_THROTTLE_AUTH_RATE = config('MIDDLEWARE_THROTTLE_AUTH_RATE', default='10000/day')
 
 # ---------------------------------------------------------------------------
+# Page-view tracking (analytics.PageView)
+# ---------------------------------------------------------------------------
+# Off by default: PageView rows are only surfaced in the admin list and aren't
+# consumed by the analytics service (which aggregates orders/books directly), so
+# recording every content GET just bloats the table. Set to True via env to
+# re-enable lightweight tracking.
+PAGEVIEW_TRACKING_ENABLED = config('PAGEVIEW_TRACKING_ENABLED', default=False, cast=bool)
+
+# ---------------------------------------------------------------------------
 # OTP settings
 # ---------------------------------------------------------------------------
 OTP_LENGTH = config('OTP_LENGTH', default=6, cast=int)
