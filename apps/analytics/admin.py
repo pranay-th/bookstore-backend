@@ -6,8 +6,13 @@ from .models import PageView
 
 @admin.register(PageView)
 class PageViewAdmin(admin.ModelAdmin):
-    list_display = ('path', 'user', 'created_at')
-    search_fields = ('path',)
+    list_display = ('path', 'user', 'ip_address', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('path', 'ip_address')
+    date_hierarchy = 'created_at'
+    list_per_page = 50
+    list_select_related = ('user',)
+    readonly_fields = ('id', 'user', 'path', 'ip_address', 'user_agent', 'created_at')
 
     def changelist_view(self, request, extra_context=None):
         extra_context = extra_context or {}

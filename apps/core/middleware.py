@@ -366,13 +366,17 @@ class ResponseCacheMiddleware:
 # ============================================================================
 
 # Paths that should never be recorded as a page view (infra, admin, docs,
-# static assets, auth + health probes).
+# static assets, auth + health probes, and high-frequency polling endpoints
+# that would otherwise flood the table — e.g. the 30s notifications poll).
 _PAGEVIEW_EXCLUDED_PATHS = _EXCLUDED_PATHS + [
     '/user/',
     '/health/',
     '/api/schema/',
     '/api/docs/',
     '/api/redoc/',
+    '/api/notifications/',  # navbar polls this every 30s — pure noise
+    '/api/cart/',           # fetched on most navigations
+    '/api/payments/',       # payment-status polling
 ]
 
 
