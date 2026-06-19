@@ -30,7 +30,7 @@ from rest_framework.permissions import IsAuthenticated
 from apps.core.events import ORDER_CREATED, publish_event
 from apps.core.responses import error_response, success_response
 from apps.coupons.services import CouponError, validate_coupon
-from apps.orders.models import Order, OrderItem
+from apps.orders.models import Order, OrderItem, OrderDelivery
 from apps.books.models import Book
 
 from . import services
@@ -76,6 +76,7 @@ class PaymentViewSet(viewsets.GenericViewSet):
         serializer.is_valid(raise_exception=True)
         items_data = serializer.validated_data["items"]
         coupon_code = serializer.validated_data.get("coupon_code", "").strip()
+        delivery_data = serializer.validated_data.get("delivery")
 
         try:
             with transaction.atomic():
@@ -123,6 +124,10 @@ class PaymentViewSet(viewsets.GenericViewSet):
                 for oi in order_items:
                     oi.order = order
                 OrderItem.objects.bulk_create(order_items)
+
+                # Snapshot delivery details onto the order (for tracking).
+                if delivery_data:
+                    OrderDelivery.objects.create(order=order, **delivery_data)
 
                 # Create the Razorpay order for the discounted amount.
                 rp_order = services.create_order(
