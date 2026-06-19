@@ -20,10 +20,14 @@ class PaymentSerializer(serializers.ModelSerializer):
 class CreateOrderSerializer(serializers.Serializer):
     """
     Input for create-order. Accepts the cart contents; the amount is computed
-    server-side from the books, never trusted from the client.
+    server-side from the books, never trusted from the client. An optional
+    coupon code is re-validated server-side before any discount is applied.
     """
     items = serializers.ListField(
         child=serializers.DictField(), allow_empty=False
+    )
+    coupon_code = serializers.CharField(
+        required=False, allow_blank=True, max_length=50
     )
 
     def validate_items(self, value):

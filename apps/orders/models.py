@@ -22,10 +22,14 @@ class Order(models.Model):
     user           = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='orders')
     status         = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     total_amount   = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    coupon         = models.ForeignKey(
+        'coupons.Coupon', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='orders',
+    )
     shipping_address = models.ForeignKey(
         'users.UserAddress', null=True, blank=True, on_delete=models.SET_NULL, related_name='orders'
     )
-    # TODO: Add coupon FK
     # TODO: Add tracking number field
     # TODO: Add shipped_at / delivered_at timestamps
     notes          = models.TextField(blank=True)

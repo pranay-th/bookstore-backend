@@ -21,6 +21,7 @@ import logging
 from django.conf import settings
 from django.db import transaction
 from django.db.models import F
+from decimal import Decimal
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -28,6 +29,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from apps.core.events import ORDER_CREATED, publish_event
 from apps.core.responses import error_response, success_response
+from apps.coupons.services import CouponError, validate_coupon
 from apps.orders.models import Order, OrderItem
 from apps.books.models import Book
 
@@ -73,6 +75,7 @@ class PaymentViewSet(viewsets.GenericViewSet):
         serializer = CreateOrderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         items_data = serializer.validated_data["items"]
+        coupon_code = serializer.validated_data.get("coupon_code", "").strip()
 
         try:
             with transaction.atomic():
@@ -97,19 +100,33 @@ class PaymentViewSet(viewsets.GenericViewSet):
                         status_code=400,
                     )
 
+                # Re-validate the coupon server-side against the computed
+                # subtotal — never trust a client-supplied discount.
+                coupon = None
+                discount_amount = Decimal("0")
+                if coupon_code:
+                    try:
+                        coupon, discount_amount = validate_coupon(coupon_code, total)
+                    except CouponError as exc:
+                        return error_response(message=str(exc), status_code=400)
+
+                charge_total = max(Decimal(str(total)) - discount_amount, Decimal("0"))
+
                 # Create the order as PENDING — not a sale until paid.
                 order = Order.objects.create(
                     user=request.user,
                     status="pending",
-                    total_amount=total,
+                    total_amount=charge_total,
+                    discount_amount=discount_amount,
+                    coupon=coupon,
                 )
                 for oi in order_items:
                     oi.order = order
                 OrderItem.objects.bulk_create(order_items)
 
-                # Create the Razorpay order.
+                # Create the Razorpay order for the discounted amount.
                 rp_order = services.create_order(
-                    amount=total,
+                    amount=charge_total,
                     receipt=str(order.id),
                     notes={"order_id": str(order.id), "user_id": str(request.user.id)},
                 )
@@ -117,7 +134,7 @@ class PaymentViewSet(viewsets.GenericViewSet):
                 Payment.objects.create(
                     order=order,
                     user=request.user,
-                    amount=total,
+                    amount=charge_total,
                     currency=rp_order.get("currency", "INR"),
                     status="created",
                     razorpay_order_id=rp_order["id"],
@@ -138,7 +155,9 @@ class PaymentViewSet(viewsets.GenericViewSet):
                 "razorpay_key_id": settings.RAZORPAY_KEY_ID,
                 "amount": rp_order["amount"],          # paise
                 "currency": rp_order["currency"],
-                "total_amount": str(total),            # rupees, for display
+                "total_amount": str(charge_total),     # rupees, for display
+                "discount_amount": str(discount_amount),
+                "coupon_code": coupon.code if coupon else None,
                 "skipped_books": skipped,
             },
             message="Razorpay order created.",
@@ -205,6 +224,13 @@ class PaymentViewSet(viewsets.GenericViewSet):
                 order = payment.order
                 order.status = "confirmed"
                 order.save(update_fields=["status", "updated_at"])
+
+                # Count the coupon redemption now that the order is paid.
+                if order.coupon_id:
+                    from apps.coupons.models import Coupon
+                    Coupon.objects.filter(id=order.coupon_id).update(
+                        used_count=F("used_count") + 1
+                    )
 
                 # Deduct stock atomically.
                 for oi in order.items.all():
