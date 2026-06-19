@@ -188,6 +188,11 @@ class PaymentViewSet(viewsets.GenericViewSet):
             payment.status = "failed"
             payment.error_description = "Signature verification failed."
             payment.save(update_fields=["status", "error_description", "updated_at"])
+            # Mark the linked order failed too — no pending limbo.
+            order = payment.order
+            if order.status == "pending":
+                order.status = "failed"
+                order.save(update_fields=["status", "updated_at"])
             return error_response(
                 message="Payment verification failed.", status_code=400
             )
@@ -251,6 +256,56 @@ class PaymentViewSet(viewsets.GenericViewSet):
         return success_response(
             data=PaymentSerializer(payment).data,
             message="Payment successful. Your order is confirmed!",
+        )
+
+    # ── Mark payment / order failed ───────────────────────────
+    @extend_schema(
+        summary="Mark a payment (and its order) as failed",
+        description=(
+            "Called by the frontend when the user cancels the Razorpay modal or "
+            "the payment fails. Flips the Payment to 'failed' and the Order to "
+            "'failed' so nothing is left in a 'pending' state. Idempotent and a "
+            "no-op once a payment has already succeeded."
+        ),
+        request=VerifyPaymentSerializer,
+        responses={200: OpenApiResponse(description="Marked failed")},
+    )
+    @action(detail=False, methods=["post"], url_path="mark-failed")
+    def mark_failed(self, request):
+        razorpay_order_id = request.data.get("razorpay_order_id")
+        if not razorpay_order_id:
+            return error_response(message="razorpay_order_id is required.", status_code=400)
+
+        try:
+            payment = Payment.objects.select_related("order").get(
+                razorpay_order_id=razorpay_order_id,
+                user=request.user,
+            )
+        except Payment.DoesNotExist:
+            return error_response(message="Payment record not found.", status_code=404)
+
+        # Never override a successful payment.
+        if payment.status == "paid":
+            return success_response(
+                data=PaymentSerializer(payment).data,
+                message="Payment already completed.",
+            )
+
+        reason = (request.data.get("reason") or "Payment cancelled or failed.")[:500]
+        with transaction.atomic():
+            payment.status = "failed"
+            payment.error_description = reason
+            payment.save(update_fields=["status", "error_description", "updated_at"])
+
+            order = payment.order
+            if order.status in ("pending",):
+                order.status = "failed"
+                order.save(update_fields=["status", "updated_at"])
+
+        logger.info("Payment marked failed: order=%s user=%s", payment.order_id, request.user.id)
+        return success_response(
+            data=PaymentSerializer(payment).data,
+            message="Payment marked as failed.",
         )
 
     # ── Payment status ────────────────────────────────────────
