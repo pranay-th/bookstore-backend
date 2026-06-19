@@ -30,7 +30,7 @@ import httpx
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser
@@ -237,20 +237,14 @@ def _fetch(path: str, timeout: float = None):
 
 @staff_member_required
 def analytics_dashboard(request):
-    """Render the analytics dashboard inside the admin."""
-    sales = _fetch('/analytics/sales/summary')
-    inventory = _fetch('/analytics/inventory/health')
-    customers = _fetch('/analytics/customers/ltv')
+    """Send admins to the frontend analytics dashboard.
 
-    context = {
-        'title': 'Analytics Dashboard',
-        'sales': sales,
-        'inventory': inventory,
-        'customers': customers,
-        'service_url': _service_url(),
-        'has_data': any([sales, inventory, customers]),
-    }
-    return render(request, 'admin/analytics_dashboard.html', context)
+    The rich dashboard now lives in the React app at ``<FRONTEND_URL>/admin``;
+    this admin entry point just redirects there instead of rendering a separate
+    Django template, so there's a single source of truth for the UI.
+    """
+    base = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000').rstrip('/')
+    return redirect(f"{base}/admin")
 
 
 @staff_member_required
