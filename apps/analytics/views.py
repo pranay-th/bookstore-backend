@@ -217,8 +217,14 @@ def _service_url():
     return getattr(settings, 'ANALYTICS_SERVICE_URL', 'http://localhost:8001')
 
 
-def _fetch(path: str, timeout: float = 10.0):
-    """Fetch JSON from the analytics microservice. Returns None on failure."""
+def _fetch(path: str, timeout: float = None):
+    """Fetch JSON from the analytics microservice. Returns None on failure.
+
+    Defaults to ANALYTICS_SERVICE_TIMEOUT (or 30s) so a cold-starting Render
+    free-tier service has time to wake up before we give up.
+    """
+    if timeout is None:
+        timeout = getattr(settings, 'ANALYTICS_SERVICE_TIMEOUT', 30)
     url = f"{_service_url()}{path}"
     try:
         resp = httpx.get(url, timeout=timeout)
