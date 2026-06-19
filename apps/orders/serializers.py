@@ -6,11 +6,14 @@ class OrderItemSerializer(serializers.ModelSerializer):
     subtotal = serializers.ReadOnlyField()
     book_title = serializers.CharField(source='book.title', read_only=True)
     book_author = serializers.CharField(source='book.author', read_only=True)
+    # Current stock for the book, so the delivery bot can detect backorders
+    # when classifying an order.
+    book_stock = serializers.IntegerField(source='book.stock', read_only=True)
 
     class Meta:
         model = OrderItem
         fields = [
-            'id', 'book', 'book_title', 'book_author',
+            'id', 'book', 'book_title', 'book_author', 'book_stock',
             'quantity', 'unit_price', 'subtotal',
         ]
 
