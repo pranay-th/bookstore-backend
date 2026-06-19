@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from apps.orders.serializers import DeliveryInputSerializer
 from .models import Payment
 
 
@@ -29,6 +30,10 @@ class CreateOrderSerializer(serializers.Serializer):
     coupon_code = serializers.CharField(
         required=False, allow_blank=True, max_length=50
     )
+    # Delivery contact + shipping address, captured at checkout. Optional so
+    # programmatic callers (e.g. the AI assistant) keep working; the storefront
+    # always sends it, and it's snapshotted onto the order for tracking.
+    delivery = DeliveryInputSerializer(required=False)
 
     def validate_items(self, value):
         cleaned = []
