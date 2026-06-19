@@ -31,9 +31,12 @@ from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import JsonResponse
 from django.shortcuts import redirect
+import json
+from urllib.parse import urlencode
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.core import analytics_client
 from apps.core.analytics_client import AnalyticsServiceError
@@ -237,14 +240,35 @@ def _fetch(path: str, timeout: float = None):
 
 @staff_member_required
 def analytics_dashboard(request):
-    """Send admins to the frontend analytics dashboard.
+    """Single sign-on into the frontend analytics dashboard.
 
-    The rich dashboard now lives in the React app at ``<FRONTEND_URL>/admin``;
-    this admin entry point just redirects there instead of rendering a separate
-    Django template, so there's a single source of truth for the UI.
+    The rich dashboard lives in the React app at ``<FRONTEND_URL>/admin``. Since
+    the Django admin session and the frontend JWT auth are separate systems, we
+    mint a short-lived JWT for the logged-in staff user and hand it to the
+    frontend via a dedicated SSO route, so the admin lands straight on the
+    dashboard without logging in again.
+
+    Tokens are passed in the URL fragment (``#``) which browsers never send to
+    servers, and the frontend strips it from history immediately after reading.
     """
     base = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000').rstrip('/')
-    return redirect(f"{base}/admin")
+    user = request.user
+
+    refresh = RefreshToken.for_user(user)
+    user_payload = {
+        "id": str(user.id),
+        "email": user.email,
+        "role": user.role,
+        "full_name": user.full_name,
+        "is_staff": user.is_staff,
+        "is_superuser": user.is_superuser,
+    }
+    fragment = urlencode({
+        "access": str(refresh.access_token),
+        "refresh": str(refresh),
+        "user": json.dumps(user_payload),
+    })
+    return redirect(f"{base}/admin/sso#{fragment}")
 
 
 @staff_member_required
