@@ -359,3 +359,83 @@ class ResponseCacheMiddleware:
             logger.info('Cache INVALIDATED %s', path)
         except Exception as exc:
             logger.warning('ResponseCacheMiddleware.invalidate error — %s', exc)
+
+
+# ============================================================================
+# 3. PageViewMiddleware
+# ============================================================================
+
+# Paths that should never be recorded as a page view (infra, admin, docs,
+# static assets, auth + health probes).
+_PAGEVIEW_EXCLUDED_PATHS = _EXCLUDED_PATHS + [
+    '/user/',
+    '/health/',
+    '/api/schema/',
+    '/api/docs/',
+    '/api/redoc/',
+]
+
+
+def _should_record_pageview(request) -> bool:
+    """Record only content GET requests to non-excluded paths."""
+    if request.method != 'GET':
+        return False
+    path = request.path
+    excluded = getattr(
+        settings, 'PAGEVIEW_EXCLUDED_PATHS', _PAGEVIEW_EXCLUDED_PATHS
+    )
+    return not any(path.startswith(p) for p in excluded)
+
+
+class PageViewMiddleware:
+    """
+    Records a lightweight ``analytics.PageView`` row for each content GET
+    request, powering the "Page Views" admin list.
+
+    Best-effort: any failure while writing the row is swallowed and logged so
+    analytics tracking can never break a real request. Recording happens AFTER
+    the view runs and only for successful (2xx/3xx) responses.
+
+    Settings (all optional):
+        PAGEVIEW_TRACKING_ENABLED  bool  default True
+        PAGEVIEW_EXCLUDED_PATHS    list  prefixes to skip
+
+    Should be placed AFTER AuthenticationMiddleware so request.user is set.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+
+        if not getattr(settings, 'PAGEVIEW_TRACKING_ENABLED', True):
+            return response
+
+        if response.status_code >= 400:
+            return response
+
+        if not _should_record_pageview(request):
+            return response
+
+        self._record(request)
+        return response
+
+    @staticmethod
+    def _record(request) -> None:
+        try:
+            # Imported lazily so the app registry is ready.
+            from apps.analytics.models import PageView
+
+            user = getattr(request, 'user', None)
+            if user is not None and not user.is_authenticated:
+                user = None
+
+            PageView.objects.create(
+                user=user,
+                path=request.path[:500],
+                ip_address=_get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', '')[:1000],
+            )
+        except Exception as exc:  # never let tracking break the request
+            logger.warning('PageViewMiddleware: failed to record view — %s', exc)

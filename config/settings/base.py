@@ -82,6 +82,9 @@ MIDDLEWARE = [
     # ResponseCacheMiddleware must come AFTER ThrottleMiddleware so throttled
     # requests are blocked before we even check the cache.
     'apps.core.middleware.ResponseCacheMiddleware',
+    # PageViewMiddleware records content GET requests for the analytics admin.
+    # After AuthenticationMiddleware so request.user is populated.
+    'apps.core.middleware.PageViewMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
