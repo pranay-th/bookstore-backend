@@ -519,6 +519,37 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 ]
 
 # ---------------------------------------------------------------------------
+# CSRF
+# ---------------------------------------------------------------------------
+# Django 4+ checks the request Origin against CSRF_TRUSTED_ORIGINS for any
+# unsafe (POST/PUT/...) request — including the admin login form. Behind HTTPS
+# on a custom domain (e.g. Render) this MUST list the scheme+host or every
+# admin POST fails with "CSRF verification failed".
+#
+# Build the list from:
+#   1. An explicit CSRF_TRUSTED_ORIGINS env var (comma-separated), if set.
+#   2. The CORS_ALLOWED_ORIGINS (already scheme://host).
+#   3. https:// for every real (non-wildcard, non-localhost) ALLOWED_HOSTS entry,
+#      so the deployed backend domain trusts itself.
+_csrf_origins = [
+    _normalize_origin(part)
+    for part in config('CSRF_TRUSTED_ORIGINS', default='').split(',')
+    if part.strip()
+]
+_csrf_origins += list(CORS_ALLOWED_ORIGINS)
+for _host in ALLOWED_HOSTS:
+    _host = _host.strip()
+    if not _host or _host == '*' or _host in ('localhost', '127.0.0.1'):
+        continue
+    _csrf_origins.append(f'https://{_host}')
+
+# De-duplicate while preserving order.
+CSRF_TRUSTED_ORIGINS = list(dict.fromkeys(o for o in _csrf_origins if o))
+
+# Trust Vercel frontend subdomains for CSRF too (mirrors the CORS regex).
+CSRF_TRUSTED_ORIGINS.append('https://*.vercel.app')
+
+# ---------------------------------------------------------------------------
 # Default primary key
 # ---------------------------------------------------------------------------
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
