@@ -9,6 +9,8 @@ Auth endpoints mounted at /user/ in config/urls.py
   POST /user/login/                   Credentials → OTP sent
   POST /user/verify-otp/              OTP → JWT tokens
   POST /user/token/refresh/           Refresh JWT access token
+  GET  /user/me/                      Get the current user's profile
+  PATCH /user/me/                     Update the current user's profile
   POST /user/cron/send-reminders/     Cron-triggered reminder emails
 """
 
@@ -21,6 +23,7 @@ from .views import (
     VerifyOTPView,
     RefreshTokenView,
     CronSendRemindersView,
+    MeView,
 )
 
 urlpatterns = [
@@ -30,5 +33,6 @@ urlpatterns = [
     path("login/",                LoginView.as_view(),               name="login"),
     path("verify-otp/",           VerifyOTPView.as_view(),           name="verify-otp"),
     path("token/refresh/",        RefreshTokenView.as_view(),        name="token-refresh"),
+    path("me/",                   MeView.as_view(),                  name="me"),
     path("cron/send-reminders/",  CronSendRemindersView.as_view(),   name="cron-send-reminders"),
 ]
