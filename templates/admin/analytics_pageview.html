@@ -1,0 +1,91 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; Analytics Overview
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .an-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 14px;
+    margin: 0 0 28px 0;
+  }
+  .an-card {
+    background: var(--darkened-bg, #f8f8f8);
+    border: 1px solid var(--hairline-color, #e0e0e0);
+    border-radius: 8px;
+    padding: 16px 18px;
+  }
+  .an-card .an-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--body-fg, #333);
+  }
+  .an-card .an-label {
+    margin-top: 6px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--body-quiet-color, #888);
+  }
+  .an-section-title { margin: 8px 0 12px; }
+  .an-cta { margin: 0 0 24px; }
+  .an-empty {
+    padding: 24px;
+    border: 1px dashed var(--hairline-color, #e0e0e0);
+    border-radius: 8px;
+    color: var(--body-quiet-color, #888);
+  }
+</style>
+
+<div class="an-cta">
+  <a class="button default" href="{{ dashboard_url }}">📊 Open Full Analytics Dashboard</a>
+</div>
+
+{% if not has_data %}
+  <div class="an-empty">
+    The analytics service is unavailable right now. Open the full dashboard to retry,
+    or check that the analytics microservice is running.
+  </div>
+{% else %}
+
+  {% if sales %}
+  <h2 class="an-section-title">Sales</h2>
+  <div class="an-grid">
+    <div class="an-card"><div class="an-value">₹{{ sales.total_revenue|default:"0" }}</div><div class="an-label">Total Revenue</div></div>
+    <div class="an-card"><div class="an-value">{{ sales.total_orders|default:"0" }}</div><div class="an-label">Total Orders</div></div>
+    <div class="an-card"><div class="an-value">{{ sales.total_items_sold|default:"0" }}</div><div class="an-label">Items Sold</div></div>
+    <div class="an-card"><div class="an-value">₹{{ sales.average_order_value|default:"0" }}</div><div class="an-label">Avg Order Value</div></div>
+    <div class="an-card"><div class="an-value">₹{{ sales.monthly_revenue|default:"0" }}</div><div class="an-label">Revenue (Month)</div></div>
+  </div>
+  {% endif %}
+
+  {% if inventory %}
+  <h2 class="an-section-title">Inventory</h2>
+  <div class="an-grid">
+    <div class="an-card"><div class="an-value">{{ inventory.total_books|default:"0" }}</div><div class="an-label">Total Books</div></div>
+    <div class="an-card"><div class="an-value">{{ inventory.in_stock|default:"0" }}</div><div class="an-label">In Stock</div></div>
+    <div class="an-card"><div class="an-value">{{ inventory.low_stock|default:"0" }}</div><div class="an-label">Low Stock</div></div>
+    <div class="an-card"><div class="an-value">{{ inventory.out_of_stock|default:"0" }}</div><div class="an-label">Out of Stock</div></div>
+    <div class="an-card"><div class="an-value">₹{{ inventory.inventory_value|default:"0" }}</div><div class="an-label">Inventory Value</div></div>
+  </div>
+  {% endif %}
+
+  {% if customers %}
+  <h2 class="an-section-title">Customers</h2>
+  <div class="an-grid">
+    <div class="an-card"><div class="an-value">{{ customers.total_customers|default:"0" }}</div><div class="an-label">Total Customers</div></div>
+    <div class="an-card"><div class="an-value">{{ customers.repeat_customers|default:"0" }}</div><div class="an-label">Repeat Customers</div></div>
+    <div class="an-card"><div class="an-value">₹{{ customers.average_ltv|default:"0" }}</div><div class="an-label">Avg Lifetime Value</div></div>
+    <div class="an-card"><div class="an-value">{{ customers.repeat_customer_rate|default:"0" }}%</div><div class="an-label">Repeat Rate</div></div>
+  </div>
+  {% endif %}
+
+{% endif %}
+{% endblock %}
