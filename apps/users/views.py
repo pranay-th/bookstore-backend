@@ -27,7 +27,7 @@ from drf_spectacular.utils import (
     extend_schema,
 )
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError as SimpleJWTTokenError
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -49,6 +49,7 @@ from .emails import send_verification_email
 from .models import User
 from .serializers import (
     LoginSerializer,
+    MeSerializer,
     RefreshTokenSerializer,
     SignupSerializer,
     VerifyEmailSerializer,
@@ -503,6 +504,27 @@ class LoginView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
 
+        # OTP bypass — return JWT tokens immediately, skip the OTP step
+        if serializer.validated_data.get("otp_bypassed"):
+            refresh = RefreshToken.for_user(user)
+            logger.warning(
+                "OTP_BYPASS login for user_id=%s role=%s", user.id, user.role
+            )
+            return success_response(
+                data={
+                    "access":  str(refresh.access_token),
+                    "refresh": str(refresh),
+                    "user": {
+                        "id":        str(user.id),
+                        "email":     user.email,
+                        "role":      user.role,
+                        "full_name": user.full_name,
+                    },
+                    "otp_bypassed": True,
+                },
+                message="Login successful (OTP bypass).",
+            )
+
         masked = mask_email(user.email)
         return success_response(
             data={"email": masked},
@@ -873,3 +895,38 @@ class CronSendRemindersView(APIView):
             data={"sent": sent, "failed": failed},
             message=f"{sent} reminder(s) sent, {failed} failed.",
         )
+
+
+# ============================================================================
+# Current user — GET / PATCH /user/me/
+# ============================================================================
+
+class MeView(APIView):
+    """Read and update the authenticated user's own profile.
+
+    GET   /user/me/  → current user's profile
+    PATCH /user/me/  → update first_name, last_name, phone (email/role are
+                        identity fields and are read-only)
+    """
+    permission_classes = [IsAuthenticated]
+    throttle_classes = []
+
+    @extend_schema(
+        summary="Get the current user's profile",
+        responses={200: OpenApiResponse(response=SuccessResponseSerializer)},
+    )
+    def get(self, request):
+        serializer = MeSerializer(request.user)
+        return success_response(data=serializer.data, message="Profile loaded.")
+
+    @extend_schema(
+        summary="Update the current user's profile",
+        request=MeSerializer,
+        responses={200: OpenApiResponse(response=SuccessResponseSerializer)},
+    )
+    def patch(self, request):
+        serializer = MeSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        logger.info("Profile updated for user_id=%s", request.user.id)
+        return success_response(data=serializer.data, message="Profile updated.")

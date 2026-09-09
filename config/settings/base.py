@@ -27,6 +27,7 @@ ALLOWED_HOSTS = config(
 # Applications
 # ---------------------------------------------------------------------------
 DJANGO_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -36,6 +37,7 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
+    'channels',
     'rest_framework',
     'corsheaders',
     'django_filters',
@@ -80,6 +82,9 @@ MIDDLEWARE = [
     # ResponseCacheMiddleware must come AFTER ThrottleMiddleware so throttled
     # requests are blocked before we even check the cache.
     'apps.core.middleware.ResponseCacheMiddleware',
+    # PageViewMiddleware records content GET requests for the analytics admin.
+    # After AuthenticationMiddleware so request.user is populated.
+    'apps.core.middleware.PageViewMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -263,6 +268,37 @@ SIMPLE_JWT = {
 # ---------------------------------------------------------------------------
 REDIS_URL = config('REDIS_URL', default='redis://localhost:6379')
 
+# ---------------------------------------------------------------------------
+# Channel Layers — WebSocket backend (reuses shared Redis)
+# Render's Key-Value store uses rediss:// (TLS). channels-redis handles this
+# natively when the URL starts with rediss://.
+# ---------------------------------------------------------------------------
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [REDIS_URL],
+            'capacity': 1500,
+            'expiry': 10,
+        },
+    },
+}
+
+# Fallback: If no Redis is available (local dev without Redis), use in-memory
+# channel layer. This only works for a single process (no cross-worker support).
+if not REDIS_URL or REDIS_URL == 'redis://localhost:6379':
+    try:
+        import redis as _redis_check
+        _r = _redis_check.from_url(REDIS_URL or 'redis://localhost:6379', socket_connect_timeout=1)
+        _r.ping()
+        del _r
+    except Exception:
+        CHANNEL_LAYERS = {
+            'default': {
+                'BACKEND': 'channels.layers.InMemoryChannelLayer',
+            },
+        }
+
 # Django cache backend — used by DRF throttle classes and the throttle middleware.
 # Falls back to in-memory cache if Redis is unavailable (development only).
 CACHES = {
@@ -399,10 +435,23 @@ MIDDLEWARE_THROTTLE_ANON_RATE = config('MIDDLEWARE_THROTTLE_ANON_RATE', default=
 MIDDLEWARE_THROTTLE_AUTH_RATE = config('MIDDLEWARE_THROTTLE_AUTH_RATE', default='10000/day')
 
 # ---------------------------------------------------------------------------
+# Page-view tracking (analytics.PageView)
+# ---------------------------------------------------------------------------
+# Off by default: PageView rows are only surfaced in the admin list and aren't
+# consumed by the analytics service (which aggregates orders/books directly), so
+# recording every content GET just bloats the table. Set to True via env to
+# re-enable lightweight tracking.
+PAGEVIEW_TRACKING_ENABLED = config('PAGEVIEW_TRACKING_ENABLED', default=False, cast=bool)
+
+# ---------------------------------------------------------------------------
 # OTP settings
 # ---------------------------------------------------------------------------
 OTP_LENGTH = config('OTP_LENGTH', default=6, cast=int)
 OTP_EXPIRY_MINUTES = config('OTP_EXPIRY_MINUTES', default=10, cast=int)
+# Development bypass — set OTP_BYPASS=True to skip OTP entirely and return
+# JWT tokens directly from POST /user/login/.
+# NEVER enable this in production.
+OTP_BYPASS = config('OTP_BYPASS', default=True, cast=bool)
 
 # ---------------------------------------------------------------------------
 # Email verification settings
@@ -430,6 +479,14 @@ ANALYTICS_SERVICE_URL = config(
 ).strip().rstrip('/')
 # Per-request timeout (seconds) for calls to the analytics service.
 ANALYTICS_SERVICE_TIMEOUT = config('ANALYTICS_SERVICE_TIMEOUT', default=20, cast=int)
+
+# ---------------------------------------------------------------------------
+# Razorpay — Test Mode (UPI payments)
+# KEY_SECRET is server-side only and used for signature verification.
+# ---------------------------------------------------------------------------
+RAZORPAY_KEY_ID = config('RAZORPAY_KEY_ID', default='')
+RAZORPAY_KEY_SECRET = config('RAZORPAY_KEY_SECRET', default='')
+RAZORPAY_CURRENCY = config('RAZORPAY_CURRENCY', default='INR')
 
 # ---------------------------------------------------------------------------
 # SendGrid via django-anymail
@@ -476,6 +533,37 @@ CORS_ALLOWED_ORIGINS = config(
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r'^https://[\w-]+\.vercel\.app$',
 ]
+
+# ---------------------------------------------------------------------------
+# CSRF
+# ---------------------------------------------------------------------------
+# Django 4+ checks the request Origin against CSRF_TRUSTED_ORIGINS for any
+# unsafe (POST/PUT/...) request — including the admin login form. Behind HTTPS
+# on a custom domain (e.g. Render) this MUST list the scheme+host or every
+# admin POST fails with "CSRF verification failed".
+#
+# Build the list from:
+#   1. An explicit CSRF_TRUSTED_ORIGINS env var (comma-separated), if set.
+#   2. The CORS_ALLOWED_ORIGINS (already scheme://host).
+#   3. https:// for every real (non-wildcard, non-localhost) ALLOWED_HOSTS entry,
+#      so the deployed backend domain trusts itself.
+_csrf_origins = [
+    _normalize_origin(part)
+    for part in config('CSRF_TRUSTED_ORIGINS', default='').split(',')
+    if part.strip()
+]
+_csrf_origins += list(CORS_ALLOWED_ORIGINS)
+for _host in ALLOWED_HOSTS:
+    _host = _host.strip()
+    if not _host or _host == '*' or _host in ('localhost', '127.0.0.1'):
+        continue
+    _csrf_origins.append(f'https://{_host}')
+
+# De-duplicate while preserving order.
+CSRF_TRUSTED_ORIGINS = list(dict.fromkeys(o for o in _csrf_origins if o))
+
+# Trust Vercel frontend subdomains for CSRF too (mirrors the CORS regex).
+CSRF_TRUSTED_ORIGINS.append('https://*.vercel.app')
 
 # ---------------------------------------------------------------------------
 # Default primary key

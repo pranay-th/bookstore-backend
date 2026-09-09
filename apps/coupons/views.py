@@ -5,18 +5,16 @@ Endpoints:
   POST /api/coupons/validate/   Validate a coupon code against an order total
   GET  /api/coupons/            List active coupons (admin only)
 """
-from decimal import Decimal
-
-from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, extend_schema
-from rest_framework import serializers, status, viewsets
+from rest_framework import serializers, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 
 from apps.core.responses import error_response, success_response
 
 from .models import Coupon
 from .serializers import CouponSerializer
+from .services import CouponError, validate_coupon
 
 
 class ValidateCouponSerializer(serializers.Serializer):
@@ -50,38 +48,13 @@ class CouponViewSet(viewsets.ModelViewSet):
         ser = ValidateCouponSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
 
-        code = ser.validated_data["code"].strip().upper()
+        code = ser.validated_data["code"]
         order_total = ser.validated_data["order_total"]
 
         try:
-            coupon = Coupon.objects.get(code__iexact=code, is_active=True)
-        except Coupon.DoesNotExist:
-            return error_response(message="Invalid coupon code.", status_code=400)
-
-        now = timezone.now()
-
-        # Check date validity
-        if coupon.valid_from and now < coupon.valid_from:
-            return error_response(message="This coupon is not yet active.", status_code=400)
-        if coupon.valid_until and now > coupon.valid_until:
-            return error_response(message="This coupon has expired.", status_code=400)
-
-        # Check usage limit
-        if coupon.max_uses and coupon.used_count >= coupon.max_uses:
-            return error_response(message="This coupon has been fully redeemed.", status_code=400)
-
-        # Check minimum order amount
-        if order_total < coupon.min_order:
-            return error_response(
-                message=f"Minimum order of ₹{coupon.min_order} required for this coupon.",
-                status_code=400,
-            )
-
-        # Calculate discount
-        if coupon.discount_type == "percentage":
-            discount_amount = round(order_total * coupon.discount_value / Decimal("100"), 2)
-        else:  # fixed
-            discount_amount = min(coupon.discount_value, order_total)
+            coupon, discount_amount = validate_coupon(code, order_total)
+        except CouponError as exc:
+            return error_response(message=str(exc), status_code=400)
 
         return success_response(
             data={

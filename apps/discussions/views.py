@@ -1,10 +1,35 @@
 """discussions/views.py — Forum thread and post management"""
+import logging
+
 from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from apps.core.responses import success_response, error_response
 from apps.core.throttles import SearchThrottle, AuthenticatedUserThrottle, AnonUserThrottle
 from .models import Thread, Post
 from .serializers import ThreadSerializer, ThreadListSerializer, PostSerializer
+
+logger = logging.getLogger(__name__)
+
+
+def _broadcast_post_deleted(thread_id, post_id):
+    """Notify everyone viewing the thread (over WS) that a post was removed.
+
+    Mirrors the consumer's own delete broadcast so REST deletes propagate live
+    too. Best-effort: never let a channel-layer hiccup break the HTTP response.
+    """
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+
+        layer = get_channel_layer()
+        if layer is None:
+            return
+        async_to_sync(layer.group_send)(
+            f'discussion_{thread_id}',
+            {'type': 'discussion.post_deleted', 'post_id': str(post_id)},
+        )
+    except Exception as exc:  # pragma: no cover - resilience path
+        logger.warning("Failed to broadcast post_deleted: %s", exc)
 
 
 class IsAuthenticatedOrReadOnly(permissions.BasePermission):
@@ -79,7 +104,7 @@ class ThreadViewSet(viewsets.ModelViewSet):
         if instance.author != request.user and not request.user.is_staff:
             return error_response(message="You can only delete your own threads.", status_code=403)
         instance.delete()
-        return success_response(data={}, message="Thread deleted successfully.", status_code=204)
+        return success_response(data={}, message="Thread deleted successfully.", status_code=200)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def add_post(self, request, pk=None):
@@ -173,5 +198,9 @@ class PostViewSet(viewsets.ModelViewSet):
                 message="You can only delete your own replies or replies on your thread.",
                 status_code=403,
             )
+        thread_id = instance.thread_id
+        post_id = instance.id
         instance.delete()
-        return success_response(data={}, message="Post deleted successfully.", status_code=204)
+        # Propagate the deletion to everyone viewing the thread in real time.
+        _broadcast_post_deleted(thread_id, post_id)
+        return success_response(data={}, message="Post deleted successfully.", status_code=200)

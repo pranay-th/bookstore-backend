@@ -30,10 +30,13 @@ import httpx
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect
+import json
+from urllib.parse import urlencode
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.core import analytics_client
 from apps.core.analytics_client import AnalyticsServiceError
@@ -217,8 +220,14 @@ def _service_url():
     return getattr(settings, 'ANALYTICS_SERVICE_URL', 'http://localhost:8001')
 
 
-def _fetch(path: str, timeout: float = 10.0):
-    """Fetch JSON from the analytics microservice. Returns None on failure."""
+def _fetch(path: str, timeout: float = None):
+    """Fetch JSON from the analytics microservice. Returns None on failure.
+
+    Defaults to ANALYTICS_SERVICE_TIMEOUT (or 30s) so a cold-starting Render
+    free-tier service has time to wake up before we give up.
+    """
+    if timeout is None:
+        timeout = getattr(settings, 'ANALYTICS_SERVICE_TIMEOUT', 30)
     url = f"{_service_url()}{path}"
     try:
         resp = httpx.get(url, timeout=timeout)
@@ -231,20 +240,35 @@ def _fetch(path: str, timeout: float = 10.0):
 
 @staff_member_required
 def analytics_dashboard(request):
-    """Render the analytics dashboard inside the admin."""
-    sales = _fetch('/analytics/sales/summary')
-    inventory = _fetch('/analytics/inventory/health')
-    customers = _fetch('/analytics/customers/ltv')
+    """Single sign-on into the frontend analytics dashboard.
 
-    context = {
-        'title': 'Analytics Dashboard',
-        'sales': sales,
-        'inventory': inventory,
-        'customers': customers,
-        'service_url': _service_url(),
-        'has_data': any([sales, inventory, customers]),
+    The rich dashboard lives in the React app at ``<FRONTEND_URL>/admin``. Since
+    the Django admin session and the frontend JWT auth are separate systems, we
+    mint a short-lived JWT for the logged-in staff user and hand it to the
+    frontend via a dedicated SSO route, so the admin lands straight on the
+    dashboard without logging in again.
+
+    Tokens are passed in the URL fragment (``#``) which browsers never send to
+    servers, and the frontend strips it from history immediately after reading.
+    """
+    base = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000').rstrip('/')
+    user = request.user
+
+    refresh = RefreshToken.for_user(user)
+    user_payload = {
+        "id": str(user.id),
+        "email": user.email,
+        "role": user.role,
+        "full_name": user.full_name,
+        "is_staff": user.is_staff,
+        "is_superuser": user.is_superuser,
     }
-    return render(request, 'admin/analytics_dashboard.html', context)
+    fragment = urlencode({
+        "access": str(refresh.access_token),
+        "refresh": str(refresh),
+        "user": json.dumps(user_payload),
+    })
+    return redirect(f"{base}/admin/sso#{fragment}")
 
 
 @staff_member_required

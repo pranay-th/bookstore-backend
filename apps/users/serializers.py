@@ -13,6 +13,7 @@ in the standard envelope and logs them at the appropriate level.
 """
 import logging
 
+from django.conf import settings
 from django.contrib.auth import authenticate
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
@@ -189,6 +190,17 @@ class LoginSerializer(serializers.Serializer):
             )
             raise EmailNotVerifiedError()
 
+        # OTP bypass — development only, never enable in production
+        if settings.OTP_BYPASS:
+            logger.warning(
+                "OTP_BYPASS is enabled — skipping OTP for user_id=%s. "
+                "NEVER use this in production.",
+                user.id,
+            )
+            attrs["user"] = user
+            attrs["otp_bypassed"] = True
+            return attrs
+
         # Generate OTP and send — raises ServiceUnavailableError if Redis/email down
         try:
             otp = generate_otp(user)
@@ -253,6 +265,27 @@ class VerifyOTPSerializer(serializers.Serializer):
 
 class RefreshTokenSerializer(serializers.Serializer):
     refresh = serializers.CharField()
+
+
+# ============================================================================
+# Current user (profile) — GET / PATCH /user/me/
+# ============================================================================
+
+class MeSerializer(serializers.ModelSerializer):
+    """Read + partial-update the authenticated user's own profile.
+
+    Email and role are identity fields and cannot be changed here. Only
+    first_name, last_name, and phone are editable.
+    """
+    full_name = serializers.ReadOnlyField()
+
+    class Meta:
+        model = User
+        fields = [
+            "id", "email", "first_name", "last_name", "phone",
+            "role", "full_name", "is_email_verified", "date_joined",
+        ]
+        read_only_fields = ["id", "email", "role", "is_email_verified", "date_joined"]
 
 
 # ============================================================================
