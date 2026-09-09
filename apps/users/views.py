@@ -504,6 +504,27 @@ class LoginView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
 
+        # OTP bypass — return JWT tokens immediately, skip the OTP step
+        if serializer.validated_data.get("otp_bypassed"):
+            refresh = RefreshToken.for_user(user)
+            logger.warning(
+                "OTP_BYPASS login for user_id=%s role=%s", user.id, user.role
+            )
+            return success_response(
+                data={
+                    "access":  str(refresh.access_token),
+                    "refresh": str(refresh),
+                    "user": {
+                        "id":        str(user.id),
+                        "email":     user.email,
+                        "role":      user.role,
+                        "full_name": user.full_name,
+                    },
+                    "otp_bypassed": True,
+                },
+                message="Login successful (OTP bypass).",
+            )
+
         masked = mask_email(user.email)
         return success_response(
             data={"email": masked},

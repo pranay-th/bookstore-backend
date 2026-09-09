@@ -13,6 +13,7 @@ in the standard envelope and logs them at the appropriate level.
 """
 import logging
 
+from django.conf import settings
 from django.contrib.auth import authenticate
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
@@ -188,6 +189,17 @@ class LoginSerializer(serializers.Serializer):
                 "Login blocked — email not verified for user_id=%s", user.id
             )
             raise EmailNotVerifiedError()
+
+        # OTP bypass — development only, never enable in production
+        if settings.OTP_BYPASS:
+            logger.warning(
+                "OTP_BYPASS is enabled — skipping OTP for user_id=%s. "
+                "NEVER use this in production.",
+                user.id,
+            )
+            attrs["user"] = user
+            attrs["otp_bypassed"] = True
+            return attrs
 
         # Generate OTP and send — raises ServiceUnavailableError if Redis/email down
         try:

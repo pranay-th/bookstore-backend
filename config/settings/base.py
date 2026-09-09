@@ -448,6 +448,10 @@ PAGEVIEW_TRACKING_ENABLED = config('PAGEVIEW_TRACKING_ENABLED', default=False, c
 # ---------------------------------------------------------------------------
 OTP_LENGTH = config('OTP_LENGTH', default=6, cast=int)
 OTP_EXPIRY_MINUTES = config('OTP_EXPIRY_MINUTES', default=10, cast=int)
+# Development bypass — set OTP_BYPASS=True to skip OTP entirely and return
+# JWT tokens directly from POST /user/login/.
+# NEVER enable this in production.
+OTP_BYPASS = config('OTP_BYPASS', default=False, cast=bool)
 
 # ---------------------------------------------------------------------------
 # Email verification settings
