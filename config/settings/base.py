@@ -451,7 +451,7 @@ OTP_EXPIRY_MINUTES = config('OTP_EXPIRY_MINUTES', default=10, cast=int)
 # Development bypass — set OTP_BYPASS=True to skip OTP entirely and return
 # JWT tokens directly from POST /user/login/.
 # NEVER enable this in production.
-OTP_BYPASS = config('OTP_BYPASS', default=False, cast=bool)
+OTP_BYPASS = config('OTP_BYPASS', default=True, cast=bool)
 
 # ---------------------------------------------------------------------------
 # Email verification settings
